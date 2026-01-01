@@ -1,0 +1,29 @@
+﻿# csb-agent Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-01-01
+
+## Active Technologies
+
+- Python 3.11+ (per constitution requirements for AI/ML libraries and AWS SDK integration) (1-aws-arch-agent)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+cd src; pytest; ruff check .
+
+## Code Style
+
+Python 3.11+ (per constitution requirements for AI/ML libraries and AWS SDK integration): Follow standard conventions
+
+## Recent Changes
+
+- 1-aws-arch-agent: Added Python 3.11+ (per constitution requirements for AI/ML libraries and AWS SDK integration)
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

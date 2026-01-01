@@ -1,0 +1,576 @@
+openapi: 3.0.3
+info:
+  title: AWS Solution Architecture Recommendation Agent API
+  version: 1.0.0
+  description: |
+    REST API for AWS Solution Architecture Recommendation Agent.
+    Supports natural language conversation for AWS architecture recommendations
+    with multi-intent recognition, pricing calculations, and diagram generation.
+  
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: http://localhost:8000/v1
+    description: Local development server
+
+paths:
+  /conversations:
+    post:
+      summary: Create a new conversation session
+      description: Creates a new conversation session and returns a session ID
+      operationId: createConversation
+      tags:
+        - Conversations
+      responses:
+        '201':
+          description: Conversation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /conversations/{session_id}/messages:
+    post:
+      summary: Send a message to the agent
+      description: |
+        Sends a user message to the agent. The agent will:
+        - Recognize intents (architecture request, pricing query, clarification)
+        - Process intents in priority order
+        - Generate architecture recommendations if requested
+        - Calculate pricing if requested
+        - Generate diagrams if architecture is recommended
+        - Maintain conversation context
+      operationId: sendMessage
+      tags:
+        - Messages
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRequest'
+      responses:
+        '200':
+          description: Message processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /conversations/{session_id}:
+    get:
+      summary: Get conversation history
+      description: Retrieves conversation history for a session
+      operationId: getConversation
+      tags:
+        - Conversations
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session identifier
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+          description: Maximum number of messages to return
+      responses:
+        '200':
+          description: Conversation retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationHistoryResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /conversations/{session_id}/recommendations:
+    get:
+      summary: List architecture recommendations
+      description: Lists all architecture recommendations for a conversation
+      operationId: listRecommendations
+      tags:
+        - Recommendations
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session identifier
+      responses:
+        '200':
+          description: Recommendations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationsListResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /recommendations/{recommendation_id}/diagram:
+    get:
+      summary: Download architecture diagram
+      description: Downloads the architecture diagram for a recommendation
+      operationId: downloadDiagram
+      tags:
+        - Recommendations
+      parameters:
+        - name: recommendation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Recommendation identifier
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [svg, png, mermaid]
+            default: svg
+          description: Diagram format
+      responses:
+        '200':
+          description: Diagram downloaded successfully
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+            image/png:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+        '404':
+          description: Recommendation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ConversationResponse:
+      type: object
+      required:
+        - session_id
+        - created_at
+        - expires_at
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Unique session identifier
+        created_at:
+          type: string
+          format: date-time
+          description: Session creation timestamp
+        expires_at:
+          type: string
+          format: date-time
+          description: Session expiration timestamp (30 days from creation)
+
+    MessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          description: User message content in natural language (Chinese Simplified)
+          minLength: 1
+          maxLength: 5000
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier (if not provided in path)
+
+    MessageResponse:
+      type: object
+      required:
+        - message_id
+        - session_id
+        - content
+        - timestamp
+        - intents
+      properties:
+        message_id:
+          type: string
+          format: uuid
+          description: Message identifier
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier
+        content:
+          type: string
+          description: Agent response content in natural language (Chinese Simplified)
+        timestamp:
+          type: string
+          format: date-time
+          description: Message timestamp
+        intents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Intent'
+          description: Recognized intents from user message
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchitectureRecommendation'
+          description: Architecture recommendations (if requested)
+        pricing:
+          $ref: '#/components/schemas/PricingCalculation'
+          description: Pricing calculation (if requested)
+        diagrams:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagramInfo'
+          description: Architecture diagrams (if generated)
+
+    Intent:
+      type: object
+      required:
+        - intent_id
+        - intent_type
+        - priority
+        - confidence
+        - status
+      properties:
+        intent_id:
+          type: string
+          format: uuid
+          description: Intent identifier
+        intent_type:
+          type: string
+          enum: [architecture_request, pricing_query, clarification, modification]
+          description: Intent category
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+          description: Processing priority (1=architecture, 2=pricing, 3=clarification)
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Recognition confidence score
+        extracted_entities:
+          type: object
+          description: Extracted entities from intent
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          description: Processing status
+
+    ArchitectureRecommendation:
+      type: object
+      required:
+        - recommendation_id
+        - created_at
+        - services
+        - diagram_data
+        - explanation
+      properties:
+        recommendation_id:
+          type: string
+          format: uuid
+          description: Recommendation identifier
+        created_at:
+          type: string
+          format: date-time
+          description: Recommendation creation timestamp
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+          description: Recommended AWS services
+        configurations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Configuration'
+          description: Service configurations
+        diagram_data:
+          type: string
+          description: Mermaid diagram source code
+        diagram_url:
+          type: string
+          format: uri
+          description: Rendered diagram URL (if available)
+        explanation:
+          type: string
+          description: Explanation of why services were recommended
+        well_architected_alignment:
+          type: object
+          description: Alignment with Well-Architected Framework pillars
+          properties:
+            operational_excellence:
+              type: string
+            security:
+              type: string
+            reliability:
+              type: string
+            performance_efficiency:
+              type: string
+            cost_optimization:
+              type: string
+            sustainability:
+              type: string
+
+    Service:
+      type: object
+      required:
+        - service_id
+        - aws_service_name
+        - service_type
+        - role
+      properties:
+        service_id:
+          type: string
+          format: uuid
+          description: Service identifier
+        aws_service_name:
+          type: string
+          description: AWS service name (e.g., "EC2", "RDS", "S3")
+        service_type:
+          type: string
+          enum: [compute, storage, database, networking, security, monitoring, other]
+          description: Service category
+        role:
+          type: string
+          description: Role in architecture
+        region:
+          type: string
+          description: AWS region
+        dependencies:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Service IDs this service depends on
+
+    Configuration:
+      type: object
+      required:
+        - configuration_id
+        - config_type
+        - config_value
+      properties:
+        configuration_id:
+          type: string
+          format: uuid
+          description: Configuration identifier
+        config_type:
+          type: string
+          description: Configuration type (e.g., "instance_type", "storage_size")
+        config_value:
+          type: string
+          description: Configuration value
+        config_details:
+          type: object
+          description: Additional configuration details
+
+    PricingCalculation:
+      type: object
+      required:
+        - pricing_id
+        - calculated_at
+        - total_monthly_cost
+        - cost_breakdown
+        - pricing_data_source
+        - pricing_data_freshness
+      properties:
+        pricing_id:
+          type: string
+          format: uuid
+          description: Pricing identifier
+        calculated_at:
+          type: string
+          format: date-time
+          description: Calculation timestamp
+        total_monthly_cost:
+          type: number
+          format: decimal
+          description: Total estimated monthly cost (USD)
+        cost_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceCost'
+          description: Itemized costs by service
+        usage_assumptions:
+          type: object
+          description: Usage assumptions used in calculation
+        pricing_data_source:
+          type: string
+          enum: [api, cache]
+          description: Source of pricing data
+        pricing_data_freshness:
+          type: string
+          format: date-time
+          description: Timestamp of pricing data used
+
+    ServiceCost:
+      type: object
+      required:
+        - service_cost_id
+        - service_name
+        - monthly_cost
+      properties:
+        service_cost_id:
+          type: string
+          format: uuid
+          description: Service cost identifier
+        service_name:
+          type: string
+          description: AWS service name
+        monthly_cost:
+          type: number
+          format: decimal
+          description: Estimated monthly cost (USD)
+        cost_components:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostComponent'
+          description: Breakdown of cost components
+
+    CostComponent:
+      type: object
+      required:
+        - component_id
+        - component_type
+        - cost
+        - unit
+      properties:
+        component_id:
+          type: string
+          format: uuid
+          description: Component identifier
+        component_type:
+          type: string
+          description: Component type (e.g., "compute", "storage")
+        cost:
+          type: number
+          format: decimal
+          description: Component cost (USD)
+        unit:
+          type: string
+          description: Cost unit (e.g., "per hour", "per GB")
+
+    DiagramInfo:
+      type: object
+      required:
+        - diagram_id
+        - format
+        - url
+      properties:
+        diagram_id:
+          type: string
+          format: uuid
+          description: Diagram identifier
+        format:
+          type: string
+          enum: [svg, png, mermaid]
+          description: Diagram format
+        url:
+          type: string
+          format: uri
+          description: Diagram download URL
+        embedded_data:
+          type: string
+          description: Base64-encoded diagram data (for inline embedding)
+
+    ConversationHistoryResponse:
+      type: object
+      required:
+        - session_id
+        - messages
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier
+        created_at:
+          type: string
+          format: date-time
+          description: Session creation timestamp
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageResponse'
+          description: Conversation messages
+
+    RecommendationsListResponse:
+      type: object
+      required:
+        - session_id
+        - recommendations
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchitectureRecommendation'
+          description: Architecture recommendations
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: object
+          description: Additional error details
+
