@@ -1,13 +1,12 @@
 <!--
 Sync Impact Report:
-Version change: N/A → 1.0.0 (initial constitution)
-Modified principles: N/A (new constitution)
-Added sections: Core Principles, Architecture Requirements, Development Workflow, Governance
+Version change: 1.0.0 → 1.1.0 (added user interface guidance)
+Modified principles: N/A
+Added sections: User Interface Requirements (within Architecture Requirements)
 Removed sections: N/A
 Templates requiring updates:
-  ✅ plan-template.md - Constitution Check section aligns with principles
-  ✅ spec-template.md - No changes needed, aligns with requirements structure
-  ✅ tasks-template.md - No changes needed, aligns with task organization
+  ✅ plan-template.md - Updated to clarify CLI-only interface option
+  ⚠ tasks-template.md - No changes needed, already supports CLI path conventions
 Follow-up TODOs: None
 -->
 
@@ -57,13 +56,19 @@ Features MUST be delivered incrementally, with each increment providing independ
 
 ## Architecture Requirements
 
+### User Interface Requirements
+The system MUST provide a command-line interface (CLI) for user interaction. No complex frontend or web-based user interface is required. The CLI MUST support natural language input and output, maintaining conversational context across multiple interactions. The system MAY expose REST API endpoints for programmatic access, but the primary user interface MUST be CLI-based.
+
+**Rationale**: A CLI interface is sufficient for the core use case of conversational AWS architecture recommendations. This simplifies development, reduces complexity, and focuses effort on the core recommendation engine rather than UI development.
+
 ### Technology Stack
 - **Primary Language**: Python 3.11+ (for AI/ML libraries and AWS SDK integration)
+- **User Interface**: Command-line interface (CLI) using Python CLI frameworks (e.g., Click, Typer, or argparse)
 - **LLM Framework**: Must support function calling/tool use for structured outputs (e.g., OpenAI GPT-4, Anthropic Claude, or open-source alternatives)
 - **AWS Integration**: boto3 SDK for AWS service queries and pricing API access
 - **Diagram Generation**: Support for Mermaid, PlantUML, or AWS Architecture Icons rendering
 - **Conversation State**: Persistent storage for conversation history (e.g., DynamoDB, PostgreSQL, or Redis)
-- **API Framework**: FastAPI or similar for REST API endpoints
+- **API Framework**: FastAPI or similar for REST API endpoints (optional, for programmatic access)
 - **Testing**: pytest for unit/integration tests, contract testing for API endpoints
 
 ### Data Requirements
@@ -130,4 +135,4 @@ This constitution supersedes all other development practices and coding standard
 
 **Complexity Justification**: Any deviation from these principles (e.g., adding a non-conversational interface, skipping pricing, or hardcoding AWS knowledge) MUST be explicitly justified in the implementation plan's Complexity Tracking section, explaining why the simpler alternative was insufficient.
 
-**Version**: 1.0.0 | **Ratified**: 2025-01-27 | **Last Amended**: 2025-01-27
+**Version**: 1.1.0 | **Ratified**: 2025-01-27 | **Last Amended**: 2025-01-27

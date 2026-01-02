@@ -67,11 +67,11 @@ specs/[###-feature]/
 -->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+# [REMOVE IF UNUSED] Option 1: Single project with CLI (DEFAULT for CLI-only projects)
 src/
 ├── models/
 ├── services/
-├── cli/
+├── cli/              # CLI interface (Click, Typer, or argparse)
 └── lib/
 
 tests/
@@ -79,7 +79,20 @@ tests/
 ├── integration/
 └── unit/
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+# [REMOVE IF UNUSED] Option 2: Single project with API (for API-only or CLI+API)
+src/
+├── models/
+├── services/
+├── api/              # REST API endpoints (FastAPI, Flask, etc.)
+├── cli/              # Optional CLI interface
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 3: Web application (when "frontend" + "backend" detected)
 backend/
 ├── src/
 │   ├── models/
@@ -94,7 +107,7 @@ frontend/
 │   └── services/
 └── tests/
 
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+# [REMOVE IF UNUSED] Option 4: Mobile + API (when "iOS/Android" detected)
 api/
 └── [same as backend above]
 
