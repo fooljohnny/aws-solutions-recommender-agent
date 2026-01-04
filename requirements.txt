@@ -13,18 +13,21 @@ langchain-openai>=0.0.2
 langchain-anthropic>=0.1.0
 openai>=1.6.0
 anthropic>=0.18.0
+groq>=0.4.0
 
 # AWS SDK
 boto3>=1.34.0
 botocore>=1.34.0
 
 # Diagram Generation
-mermaid>=0.1.0
+# Note: Mermaid diagrams are generated as text, no Python package needed
 diagrams>=0.23.0
 
 # Storage
 redis>=5.0.0
 aioredis>=2.0.0
+aiomysql>=0.2.0
+pymysql>=1.1.0
 
 # CLI Framework
 click>=8.1.7
@@ -36,6 +39,10 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 httpx>=0.25.0
+
+# RAG and Vector Database
+pymilvus>=2.3.0
+sentence-transformers>=2.2.0  # For local embeddings (optional, can use OpenAI)
 
 # Utilities
 python-dotenv>=1.0.0

@@ -3,22 +3,29 @@
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
-from src.models.message import Message
-from src.utils.storage.dynamodb import DynamoDBClient
+import json
+from src.models.message import Message, MessageRole
+from src.utils.storage.mysql import MySQLClient
 
 
 class MessageRepository:
     """Repository for Message entity operations."""
 
-    def __init__(self, dynamodb_client: Optional[DynamoDBClient] = None):
-        """Initialize repository with DynamoDB client.
+    def __init__(self, mysql_client: Optional[MySQLClient] = None):
+        """Initialize repository with MySQL client.
 
         Args:
-            dynamodb_client: DynamoDB client instance (creates new if not provided)
+            mysql_client: MySQL client instance (creates new if not provided)
         """
-        self.dynamodb = dynamodb_client or DynamoDBClient()
-        self.table_name = "messages"
-        self.table = self.dynamodb.get_table(self.table_name)
+        self.mysql = mysql_client or MySQLClient()
+        self._initialized = False
+
+    async def _ensure_initialized(self):
+        """Ensure MySQL connection is initialized."""
+        if not self._initialized:
+            await self.mysql.connect()
+            await self.mysql.initialize_database()
+            self._initialized = True
 
     async def create(self, message: Message) -> Message:
         """Create a new message.
@@ -29,12 +36,25 @@ class MessageRepository:
         Returns:
             Created message
         """
-        item = message.model_dump(mode="json")
-        item["message_id"] = str(item["message_id"])
-        item["session_id"] = str(item["session_id"])
-        item["timestamp"] = item["timestamp"].isoformat()
+        await self._ensure_initialized()
 
-        self.table.put_item(Item=item)
+        query = """
+        INSERT INTO messages (
+            message_id, session_id, timestamp, role, content, intents, metadata
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+
+        params = (
+            str(message.message_id),
+            str(message.session_id),
+            message.timestamp,
+            message.role.value,
+            message.content,
+            json.dumps([intent.model_dump(mode="json") if hasattr(intent, "model_dump") else intent for intent in message.intents]) if message.intents else None,
+            json.dumps(message.metadata) if message.metadata else None,
+        )
+
+        await self.mysql.execute(query, params)
         return message
 
     async def get_by_session_id(
@@ -51,20 +71,36 @@ class MessageRepository:
         Returns:
             List of messages
         """
-        response = self.table.query(
-            KeyConditionExpression="session_id = :sid",
-            ExpressionAttributeValues={":sid": str(session_id)},
-            ScanIndexForward=False,  # Most recent first
-            Limit=limit,
-        )
+        await self._ensure_initialized()
+
+        query = """
+        SELECT * FROM messages
+        WHERE session_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+        """
+
+        rows = await self.mysql.execute(query, (str(session_id), limit or 50))
 
         messages = []
-        for item in response.get("Items", []):
-            messages.append(Message(**item))
+        for row in rows:
+            intents = json.loads(row["intents"]) if row["intents"] else []
+            metadata = json.loads(row["metadata"]) if row["metadata"] else None
+
+            messages.append(Message(
+                message_id=UUID(row["message_id"]),
+                session_id=UUID(row["session_id"]),
+                timestamp=row["timestamp"],
+                role=MessageRole(row["role"]),
+                content=row["content"],
+                intents=intents,
+                metadata=metadata,
+            ))
+
         return messages
 
     async def get_by_message_id(self, message_id: UUID) -> Optional[Message]:
-        """Get message by message ID (requires scan, use sparingly).
+        """Get message by message ID.
 
         Args:
             message_id: Message identifier
@@ -72,16 +108,23 @@ class MessageRepository:
         Returns:
             Message if found, None otherwise
         """
-        # Note: This requires a scan operation which is inefficient
-        # Consider adding a GSI if this is frequently needed
-        response = self.table.scan(
-            FilterExpression="message_id = :mid",
-            ExpressionAttributeValues={":mid": str(message_id)},
-        )
+        await self._ensure_initialized()
 
-        items = response.get("Items", [])
-        if not items:
+        query = "SELECT * FROM messages WHERE message_id = %s"
+        row = await self.mysql.execute_one(query, (str(message_id),))
+
+        if not row:
             return None
 
-        return Message(**items[0])
+        intents = json.loads(row["intents"]) if row["intents"] else []
+        metadata = json.loads(row["metadata"]) if row["metadata"] else None
 
+        return Message(
+            message_id=UUID(row["message_id"]),
+            session_id=UUID(row["session_id"]),
+            timestamp=row["timestamp"],
+            role=MessageRole(row["role"]),
+            content=row["content"],
+            intents=intents,
+            metadata=metadata,
+        )

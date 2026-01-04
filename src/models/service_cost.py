@@ -25,3 +25,4 @@ class ServiceCost(BaseModel):
             Decimal: lambda v: float(v),
         }
 
+

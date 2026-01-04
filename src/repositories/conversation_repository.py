@@ -3,22 +3,30 @@
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
+import json
 from src.models.conversation import Conversation
-from src.utils.storage.dynamodb import DynamoDBClient
+from src.utils.storage.mysql import MySQLClient
 
 
 class ConversationRepository:
     """Repository for Conversation entity operations."""
 
-    def __init__(self, dynamodb_client: Optional[DynamoDBClient] = None):
-        """Initialize repository with DynamoDB client.
+    def __init__(self, mysql_client: Optional[MySQLClient] = None):
+        """Initialize repository with MySQL client.
 
         Args:
-            dynamodb_client: DynamoDB client instance (creates new if not provided)
+            mysql_client: MySQL client instance (creates new if not provided)
         """
-        self.dynamodb = dynamodb_client or DynamoDBClient()
-        self.table_name = "conversations"
-        self.table = self.dynamodb.get_table(self.table_name)
+        self.mysql = mysql_client or MySQLClient()
+        # Initialize connection on first use
+        self._initialized = False
+
+    async def _ensure_initialized(self):
+        """Ensure MySQL connection is initialized."""
+        if not self._initialized:
+            await self.mysql.connect()
+            await self.mysql.initialize_database()
+            self._initialized = True
 
     async def create(self, conversation: Conversation) -> Conversation:
         """Create a new conversation.
@@ -29,19 +37,33 @@ class ConversationRepository:
         Returns:
             Created conversation
         """
-        item = conversation.model_dump(mode="json")
-        item["session_id"] = str(item["session_id"])
-        item["created_at"] = item["created_at"].isoformat()
-        item["last_accessed_at"] = item["last_accessed_at"].isoformat()
-        item["expires_at"] = item["expires_at"].isoformat()
-        # Convert conversation_history to serializable format
-        if item.get("conversation_history"):
-            item["conversation_history"] = [
-                msg.model_dump(mode="json") if hasattr(msg, "model_dump") else msg
-                for msg in item["conversation_history"]
-            ]
+        await self._ensure_initialized()
 
-        self.table.put_item(Item=item)
+        query = """
+        INSERT INTO conversations (
+            session_id, created_at, last_accessed_at, expires_at,
+            conversation_history, current_context, user_preferences
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            last_accessed_at = VALUES(last_accessed_at),
+            current_context = VALUES(current_context)
+        """
+
+        conversation_history_json = json.dumps(
+            [msg.model_dump(mode="json") if hasattr(msg, "model_dump") else msg for msg in conversation.conversation_history]
+        ) if conversation.conversation_history else None
+
+        params = (
+            str(conversation.session_id),
+            conversation.created_at,
+            conversation.last_accessed_at,
+            conversation.expires_at,
+            conversation_history_json,
+            json.dumps(conversation.current_context) if conversation.current_context else None,
+            json.dumps(conversation.user_preferences) if conversation.user_preferences else None,
+        )
+
+        await self.mysql.execute(query, params)
         return conversation
 
     async def get_by_session_id(self, session_id: UUID) -> Optional[Conversation]:
@@ -53,15 +75,28 @@ class ConversationRepository:
         Returns:
             Conversation if found, None otherwise
         """
-        response = self.table.get_item(
-            Key={"session_id": str(session_id)}
-        )
-        if "Item" not in response:
+        await self._ensure_initialized()
+
+        query = "SELECT * FROM conversations WHERE session_id = %s"
+        row = await self.mysql.execute_one(query, (str(session_id),))
+
+        if not row:
             return None
 
-        item = response["Item"]
-        # Parse dates and reconstruct conversation
-        return Conversation(**item)
+        # Parse JSON fields
+        conversation_history = json.loads(row["conversation_history"]) if row["conversation_history"] else []
+        current_context = json.loads(row["current_context"]) if row["current_context"] else None
+        user_preferences = json.loads(row["user_preferences"]) if row["user_preferences"] else None
+
+        return Conversation(
+            session_id=UUID(row["session_id"]),
+            created_at=row["created_at"],
+            last_accessed_at=row["last_accessed_at"],
+            expires_at=row["expires_at"],
+            conversation_history=conversation_history,
+            current_context=current_context,
+            user_preferences=user_preferences,
+        )
 
     async def update(self, conversation: Conversation) -> Conversation:
         """Update existing conversation.
@@ -72,11 +107,30 @@ class ConversationRepository:
         Returns:
             Updated conversation
         """
-        item = conversation.model_dump(mode="json")
-        item["session_id"] = str(item["session_id"])
-        item["last_accessed_at"] = item["last_accessed_at"].isoformat()
+        await self._ensure_initialized()
 
-        self.table.put_item(Item=item)
+        query = """
+        UPDATE conversations SET
+            last_accessed_at = %s,
+            conversation_history = %s,
+            current_context = %s,
+            user_preferences = %s
+        WHERE session_id = %s
+        """
+
+        conversation_history_json = json.dumps(
+            [msg.model_dump(mode="json") if hasattr(msg, "model_dump") else msg for msg in conversation.conversation_history]
+        ) if conversation.conversation_history else None
+
+        params = (
+            conversation.last_accessed_at,
+            conversation_history_json,
+            json.dumps(conversation.current_context) if conversation.current_context else None,
+            json.dumps(conversation.user_preferences) if conversation.user_preferences else None,
+            str(conversation.session_id),
+        )
+
+        await self.mysql.execute(query, params)
         return conversation
 
     async def delete(self, session_id: UUID) -> bool:
@@ -88,9 +142,11 @@ class ConversationRepository:
         Returns:
             True if deleted successfully
         """
+        await self._ensure_initialized()
+
         try:
-            self.table.delete_item(Key={"session_id": str(session_id)})
+            query = "DELETE FROM conversations WHERE session_id = %s"
+            await self.mysql.execute(query, (str(session_id),))
             return True
         except Exception:
             return False
-

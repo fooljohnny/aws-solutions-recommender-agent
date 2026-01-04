@@ -22,3 +22,4 @@ class CostComponent(BaseModel):
             Decimal: lambda v: float(v),
         }
 
+

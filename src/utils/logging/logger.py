@@ -215,3 +215,4 @@ class JSONFormatter(logging.Formatter):
 # Global logger instance
 logger = StructuredLogger()
 
+

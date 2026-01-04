@@ -4,6 +4,7 @@ import os
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 
 
 class ConversationSummarizer:
@@ -29,6 +30,12 @@ class ConversationSummarizer:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -65,7 +72,8 @@ class ConversationSummarizer:
 
 请用中文总结，控制在{max_length}字符以内。"""
 
-        if self.llm_provider == "openai":
+        if self.llm_provider in ["openai", "groq"]:
+            # Groq API is compatible with OpenAI format
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -126,7 +134,8 @@ class ConversationSummarizer:
 
 请更新总结，控制在{max_length}字符以内。"""
 
-        if self.llm_provider == "openai":
+        if self.llm_provider in ["openai", "groq"]:
+            # Groq API is compatible with OpenAI format
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -151,4 +160,5 @@ class ConversationSummarizer:
             summary = summary[:max_length - 3] + "..."
 
         return summary
+
 

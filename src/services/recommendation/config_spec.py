@@ -127,3 +127,4 @@ class ConfigurationSpecService:
                 summary_parts.append(f"  ({details})")
         return "\n".join(summary_parts)
 
+

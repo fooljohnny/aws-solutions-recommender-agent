@@ -111,3 +111,4 @@ class SessionManager:
         remaining = conversation.expires_at - datetime.utcnow()
         return remaining.days
 
+

@@ -142,3 +142,4 @@ class AWSPricingClient:
         }
         return location_map.get(region, region)
 
+

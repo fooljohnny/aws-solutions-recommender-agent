@@ -1,2 +1,2 @@
-"""Storage utilities for DynamoDB and Redis."""
+"""Storage utilities for MySQL, Redis, and Milvus."""
 

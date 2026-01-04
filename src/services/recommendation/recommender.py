@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ..aws_knowledge.validator import AWSServiceValidator
 from ...models.architecture_recommendation import ArchitectureRecommendation
@@ -49,6 +50,12 @@ class ArchitectureRecommender:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -137,8 +144,23 @@ class ArchitectureRecommender:
             for req in requirements
         ])
 
-        # Get available services from catalog
-        available_services = self.catalog.get_knowledge_base().get_all_services()
+        # Build query from requirements for semantic search
+        query_parts = [req.requirement_value for req in requirements]
+        query = " ".join(query_parts) if query_parts else "AWS services"
+
+        # Use semantic search if RAG is enabled, otherwise use keyword search
+        if self.catalog.use_rag:
+            # Use semantic search to find most relevant services
+            search_results = self.catalog.search_services_semantic(
+                query=query,
+                top_k=10,
+            )
+            available_services = [result["service"] for result in search_results]
+        else:
+            # Fallback to keyword search or all services
+            available_services = self.catalog.search_services(keyword=query) or \
+                                self.catalog.get_knowledge_base().get_all_services()[:20]
+
         services_text = "\n".join([
             f"- {svc.service_name}: {svc.description}"
             for svc in available_services[:20]  # Limit to first 20 for prompt size
@@ -188,7 +210,8 @@ class ArchitectureRecommender:
         Returns:
             Service recommendations as dictionary
         """
-        if self.llm_provider == "openai":
+        if self.llm_provider in ["openai", "groq"]:
+            # Groq API is compatible with OpenAI format
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

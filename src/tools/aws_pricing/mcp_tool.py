@@ -88,3 +88,4 @@ class MCPPricingTool:
             "unit": price_data.get("unit", "per hour"),
         }
 
+

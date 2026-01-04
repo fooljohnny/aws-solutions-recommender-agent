@@ -1,6 +1,6 @@
 """Intent priority ordering logic with priority: architecture_request (1) > pricing_query (2) > clarification (3)."""
 
-from typing import List
+from typing import List, Dict
 from ...models.intent import Intent, IntentType
 
 
@@ -75,4 +75,5 @@ class IntentProcessor:
             True if pricing query present
         """
         return any(intent.intent_type == IntentType.PRICING_QUERY for intent in intents)
+
 

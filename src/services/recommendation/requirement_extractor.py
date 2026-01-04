@@ -4,6 +4,7 @@ import os
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ...models.user_requirement import UserRequirement, RequirementType
 
@@ -37,6 +38,12 @@ class RequirementExtractor:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -144,6 +151,19 @@ class RequirementExtractor:
             Extracted requirements as dictionary
         """
         if self.llm_provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "你是一个AWS架构需求提取专家。只返回JSON格式的结果。"},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+            import json
+            return json.loads(response.choices[0].message.content)
+        elif self.llm_provider == "groq":
+            # Groq API is similar to OpenAI
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

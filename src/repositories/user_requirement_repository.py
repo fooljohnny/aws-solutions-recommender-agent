@@ -2,22 +2,28 @@
 
 from typing import Optional, List
 from uuid import UUID
-from src.models.user_requirement import UserRequirement
-from src.utils.storage.dynamodb import DynamoDBClient
+from src.models.user_requirement import UserRequirement, RequirementType
+from src.utils.storage.mysql import MySQLClient
 
 
 class UserRequirementRepository:
     """Repository for UserRequirement entity operations."""
 
-    def __init__(self, dynamodb_client: Optional[DynamoDBClient] = None):
-        """Initialize repository with DynamoDB client.
+    def __init__(self, mysql_client: Optional[MySQLClient] = None):
+        """Initialize repository with MySQL client.
 
         Args:
-            dynamodb_client: DynamoDB client instance (creates new if not provided)
+            mysql_client: MySQL client instance (creates new if not provided)
         """
-        self.dynamodb = dynamodb_client or DynamoDBClient()
-        self.table_name = "user_requirements"
-        self.table = self.dynamodb.get_table(self.table_name)
+        self.mysql = mysql_client or MySQLClient()
+        self._initialized = False
+
+    async def _ensure_initialized(self):
+        """Ensure MySQL connection is initialized."""
+        if not self._initialized:
+            await self.mysql.connect()
+            await self.mysql.initialize_database()
+            self._initialized = True
 
     async def create(self, requirement: UserRequirement) -> UserRequirement:
         """Create a new user requirement.
@@ -28,14 +34,26 @@ class UserRequirementRepository:
         Returns:
             Created requirement
         """
-        item = requirement.model_dump(mode="json")
-        item["requirement_id"] = str(item["requirement_id"])
-        item["session_id"] = str(item["session_id"])
-        item["extracted_at"] = item["extracted_at"].isoformat()
-        if item.get("source_message_id"):
-            item["source_message_id"] = str(item["source_message_id"])
+        await self._ensure_initialized()
 
-        self.table.put_item(Item=item)
+        query = """
+        INSERT INTO user_requirements (
+            requirement_id, session_id, extracted_at, requirement_type,
+            requirement_value, confidence, source_message_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+
+        params = (
+            str(requirement.requirement_id),
+            str(requirement.session_id),
+            requirement.extracted_at,
+            requirement.requirement_type.value,
+            requirement.requirement_value,
+            requirement.confidence,
+            str(requirement.source_message_id) if requirement.source_message_id else None,
+        )
+
+        await self.mysql.execute(query, params)
         return requirement
 
     async def get_by_session_id(self, session_id: UUID) -> List[UserRequirement]:
@@ -47,14 +65,23 @@ class UserRequirementRepository:
         Returns:
             List of requirements
         """
-        response = self.table.query(
-            KeyConditionExpression="session_id = :sid",
-            ExpressionAttributeValues={":sid": str(session_id)},
-        )
+        await self._ensure_initialized()
+
+        query = "SELECT * FROM user_requirements WHERE session_id = %s ORDER BY extracted_at DESC"
+        rows = await self.mysql.execute(query, (str(session_id),))
 
         requirements = []
-        for item in response.get("Items", []):
-            requirements.append(UserRequirement(**item))
+        for row in rows:
+            requirements.append(UserRequirement(
+                requirement_id=UUID(row["requirement_id"]),
+                session_id=UUID(row["session_id"]),
+                extracted_at=row["extracted_at"],
+                requirement_type=RequirementType(row["requirement_type"]),
+                requirement_value=row["requirement_value"],
+                confidence=row["confidence"],
+                source_message_id=UUID(row["source_message_id"]) if row["source_message_id"] else None,
+            ))
+
         return requirements
 
     async def get_by_type(
@@ -71,9 +98,25 @@ class UserRequirementRepository:
         Returns:
             List of requirements matching type
         """
-        all_requirements = await self.get_by_session_id(session_id)
-        return [
-            req for req in all_requirements
-            if req.requirement_type == requirement_type
-        ]
+        await self._ensure_initialized()
 
+        query = """
+        SELECT * FROM user_requirements
+        WHERE session_id = %s AND requirement_type = %s
+        ORDER BY extracted_at DESC
+        """
+        rows = await self.mysql.execute(query, (str(session_id), requirement_type))
+
+        requirements = []
+        for row in rows:
+            requirements.append(UserRequirement(
+                requirement_id=UUID(row["requirement_id"]),
+                session_id=UUID(row["session_id"]),
+                extracted_at=row["extracted_at"],
+                requirement_type=RequirementType(row["requirement_type"]),
+                requirement_value=row["requirement_value"],
+                confidence=row["confidence"],
+                source_message_id=UUID(row["source_message_id"]) if row["source_message_id"] else None,
+            ))
+
+        return requirements
