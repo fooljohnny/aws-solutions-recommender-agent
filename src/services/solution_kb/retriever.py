@@ -8,6 +8,7 @@ from typing import List, Optional
 from ...models.user_requirement import UserRequirement
 from .models import TemplateExtract
 from .store import SolutionKBStore
+from .store_factory import get_solution_kb_store
 
 
 @dataclass(frozen=True)
@@ -20,7 +21,7 @@ class SolutionTemplateRetriever:
     """Turns user requirements into KB queries and returns best-matching templates."""
 
     def __init__(self, store: Optional[SolutionKBStore] = None):
-        self.store = store or SolutionKBStore()
+        self.store = store or get_solution_kb_store()
 
     def retrieve(self, requirements: List[UserRequirement], *, limit: int = 5) -> List[RetrievedTemplate]:
         keywords = self._keywords_from_requirements(requirements)

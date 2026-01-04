@@ -9,7 +9,7 @@ from rich.table import Table
 
 from ..services.solution_kb.ingest import SolutionKBIngestor
 from ..services.solution_kb.models import TemplateSource
-from ..services.solution_kb.store import SolutionKBStore
+from ..services.solution_kb.store_factory import get_solution_kb_store
 
 
 app = typer.Typer(help="Solution template knowledge base (KB) utilities")
@@ -24,8 +24,8 @@ def ingest(
     kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (defaults to .solution_kb)"),
     max_files: int = typer.Option(2000, "--max-files", help="Max files to scan in a directory"),
 ):
-    """Ingest CloudFormation templates (JSON/YAML) into the local KB."""
-    store = SolutionKBStore(root_dir=kb_dir) if kb_dir else SolutionKBStore()
+    """Ingest CloudFormation templates (JSON/YAML) into the KB (Neo4j or local file)."""
+    store = get_solution_kb_store(root_dir=kb_dir)
     ingestor = SolutionKBIngestor(store=store)
     stats = ingestor.ingest_path(path, source=source, repository=repository, max_files=max_files)
     console.print(
@@ -39,8 +39,8 @@ def search(
     kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (defaults to .solution_kb)"),
     limit: int = typer.Option(5, "--limit", help="Max results"),
 ):
-    """Search the local KB for templates."""
-    store = SolutionKBStore(root_dir=kb_dir) if kb_dir else SolutionKBStore()
+    """Search the KB for templates."""
+    store = get_solution_kb_store(root_dir=kb_dir)
     results = store.search(keywords=[query], limit=limit)
     if not results:
         console.print("[yellow]No results.[/yellow]")
@@ -63,4 +63,17 @@ def search(
         )
 
     console.print(table)
+
+
+@app.command("init-neo4j")
+def init_neo4j():
+    """Initialize Neo4j constraints/indexes for the KB graph.
+
+    Requires env vars: NEO4J_URI, NEO4J_USER (optional), NEO4J_PASSWORD, NEO4J_DATABASE (optional)
+    """
+    from ..services.solution_kb.neo4j_store import Neo4jSolutionKBStore
+
+    store = Neo4jSolutionKBStore.from_env()
+    store.ensure_schema()
+    console.print("[green]Neo4j KB schema initialized.[/green]")
 

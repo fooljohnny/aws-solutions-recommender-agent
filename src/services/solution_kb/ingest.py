@@ -9,6 +9,7 @@ from typing import Iterable, List, Optional
 from .cfn_parser import CloudFormationTemplateParser, CloudFormationParseError
 from .models import TemplateExtract, TemplateSource
 from .store import SolutionKBStore
+from .store_factory import get_solution_kb_store
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class SolutionKBIngestor:
     """Collects templates from local paths and stores normalized extracts."""
 
     def __init__(self, store: Optional[SolutionKBStore] = None):
-        self.store = store or SolutionKBStore()
+        self.store = store or get_solution_kb_store()
         self.cfn_parser = CloudFormationTemplateParser()
 
     def ingest_path(

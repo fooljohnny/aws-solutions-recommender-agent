@@ -8,7 +8,7 @@ from anthropic import Anthropic
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ..aws_knowledge.validator import AWSServiceValidator
 from ..solution_kb.retriever import SolutionTemplateRetriever
-from ..solution_kb.store import SolutionKBStore
+from ..solution_kb.store_factory import get_solution_kb_store
 from ...models.architecture_recommendation import ArchitectureRecommendation
 from ...models.service import Service, ServiceType
 from ...models.configuration import Configuration
@@ -38,8 +38,8 @@ class ArchitectureRecommender:
         self.validator = validator or AWSServiceValidator(self.catalog)
         self.well_architected_checker = WellArchitectedChecker(validator, catalog)
         self.pricing_calculator = PricingCalculator()
-        kb_dir = os.getenv("SOLUTION_KB_DIR")  # default store uses .solution_kb
-        self.solution_kb = SolutionTemplateRetriever(store=SolutionKBStore(root_dir=kb_dir) if kb_dir else None)
+        kb_dir = os.getenv("SOLUTION_KB_DIR")  # only used by file backend
+        self.solution_kb = SolutionTemplateRetriever(store=get_solution_kb_store(root_dir=kb_dir))
 
         if llm_provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")

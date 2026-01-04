@@ -44,3 +44,6 @@ python-multipart>=0.0.6
 # IaC parsing (CloudFormation YAML)
 pyyaml>=6.0.2
 
+# Graph storage (Neo4j)
+neo4j>=5.28.0
+
