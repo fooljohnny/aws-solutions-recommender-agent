@@ -240,6 +240,11 @@ python -m src.services.pricing.updater
 └─────────────────────────────────────────────┘
         │
 ┌───────▼─────────────────────────────────────┐
+│     Solution Template KB / Knowledge Graph   │
+│  (成熟模板知识库/Neo4j知识图谱 + 检索排序)     │
+└─────────────────────────────────────────────┘
+        │
+┌───────▼─────────────────────────────────────┐
 │         Storage Layer                        │
 │  (存储层: DynamoDB + Redis)                   │
 └─────────────────────────────────────────────┘
@@ -298,6 +303,17 @@ aws-solutions-recommender-agent/
 │   │   │   ├── icons.py                  # AWS架构图标映射
 │   │   │   ├── renderer.py               # 图表渲染器（SVG/PNG）
 │   │   │   └── storage.py                # 图表存储和URL生成
+│   │   │
+│   │   ├── solution_kb/                    # 成熟模板知识库/知识图谱（Neo4j）
+│   │   │   ├── cfn_parser.py              # CloudFormation解析与抽取
+│   │   │   ├── meta.py                    # 运营标注(kb.meta.yaml)解析与合并
+│   │   │   ├── neo4j_store.py             # Neo4j图谱存储/检索
+│   │   │   ├── store.py                   # 本地回退存储(JSONL)
+│   │   │   ├── retriever.py               # 候选模板检索入口
+│   │   │   ├── ranking.py                 # 混合排序(关键词+语义+同义词+来源优先级+权重学习)
+│   │   │   ├── clarifier.py               # 候选差异驱动澄清提问
+│   │   │   ├── embeddings.py              # 向量/语义相似度(可选OpenAI,兜底Hash)
+│   │   │   └── synonyms.py                # 行业/业务同义词归一
 │   │   │
 │   │   └── aws_knowledge/                 # AWS知识库服务
 │   │       ├── base.py                   # 知识库基础结构
@@ -392,6 +408,8 @@ aws-solutions-recommender-agent/
   ↓
 需求提取 (extract_requirements) - 支持上下文合并
   ↓
+（可选）成熟模板候选差异澄清 (clarify_requirements) - KB驱动最少问题
+  ↓
 架构推荐 (generate_recommendation) - 基于需求和上下文
   ↓
 图表生成 (generate_diagram) - Mermaid格式
@@ -434,6 +452,85 @@ aws-solutions-recommender-agent/
 3. **配置生成**: 根据规模生成详细配置
 4. **验证**: 使用Well-Architected Framework验证
 5. **解释生成**: LLM生成推荐理由
+
+#### 3.5 成熟模板知识库 / 知识图谱 (Solution Template KB / Knowledge Graph)
+
+目标：把成熟的 CloudFormation /（未来 Terraform）模板抽取成图谱，优先复用成熟方案、参数与拓扑，再由LLM补齐解释与细节。
+
+**核心入口**：
+- `src/services/solution_kb/ingest.py`: 采集模板并入库（解析 + 运营标注合并 + 生成embedding）
+- `src/services/solution_kb/neo4j_store.py`: Neo4j图谱存储与检索
+- `src/services/solution_kb/retriever.py`: 候选模板检索（混合排序）
+- `src/services/solution_kb/clarifier.py`: 候选差异驱动澄清提问（用户描述不完整时）
+
+**Neo4j 环境变量**：
+- `NEO4J_URI`
+- `NEO4J_USER`（可选，默认 `neo4j`）
+- `NEO4J_PASSWORD`
+- `NEO4J_DATABASE`（可选）
+- `SOLUTION_KB_BACKEND=neo4j`（可选；也可仅设置 `NEO4J_URI` 自动启用）
+
+**运营标注（kb.meta.yaml）**：
+在模板同目录放置 `kb.meta.yaml`（也支持 `.yml/.json`），入库时会自动合并标注到图谱中。
+
+单模板模式示例：
+
+```yaml
+name: "电商高可用Web参考架构"
+description: "ALB + EC2 + RDS，多可用区"
+source: aws_quickstart
+repository: "github.com/aws-quickstart/..."
+tags: ["high-availability", "web", "prod-ready"]
+industries: ["零售", "电商"]        # 会自动归一为 canonical token（如 retail）
+business_types: ["ecommerce"]
+```
+
+多模板模式示例：
+
+```yaml
+default:
+  source: aws_solutions
+  tags: ["prod-ready"]
+templates:
+  - path: "a/template.yaml"
+    name: "方案A"
+    tags: ["web"]
+  - path: "b/template.yaml"
+    name: "方案B"
+    industries: ["金融"]
+```
+
+**入库/校验/检索 CLI**：
+- `aws-arch-agent kb validate-meta path/to/kb.meta.yaml`：校验运营标注文件
+- `aws-arch-agent kb init-neo4j`：初始化 Neo4j 约束/索引（只需一次）
+- `aws-arch-agent kb ingest <模板文件或目录> --source aws_quickstart --repo <repo标识>`：解析模板并刷入知识图谱
+- `aws-arch-agent kb search "<关键词>" --limit 5`：检索模板
+- `aws-arch-agent kb annotate --template-id <uuid> --tags "a,b" --industries "finance" --business-types "payments"`：事后补标/改标
+
+**资源类型“最可能连接”统计**：
+- `aws-arch-agent kb suggest-links --resource-type "AWS::Lambda::Function" --direction out|in|both --relation depends_on|references|both --industries "finance" --business-types "payments"`
+
+**候选模板混合排序（关键词+语义+同义词+来源优先级）**：
+- 关键词命中、资源类型命中
+- 向量语义相似度（有 `OPENAI_API_KEY` 时使用 OpenAI embeddings；否则使用 HashEmbedding 兜底）
+- 行业/业务同义词归一（如 “金融/银行/finance”→`finance`）
+- 模板来源可信度优先级（QuickStart > Solutions > SAR > …）
+
+**权重学习（可选）**：
+- `aws-arch-agent kb show-weights`
+- `aws-arch-agent kb reset-weights`
+- `aws-arch-agent kb feedback --chosen <uuid> --rejected <uuid> --query "<用户描述>"`：成对反馈更新排序权重
+
+**知识图谱三元组（当前已实现）**：
+- 模板结构：
+  - `(Template)-[:CONTAINS]->(Resource|Parameter|Output)`
+- 资源拓扑：
+  - `(Resource)-[:DEPENDS_ON]->(Resource)`
+  - `(Resource)-[:REFERENCES]->(Resource|Parameter)`
+- 运营标注：
+  - `(Template)-[:HAS_TAG]->(Tag)`
+  - `(Template)-[:HAS_INDUSTRY]->(Industry)`
+  - `(Template)-[:HAS_BUSINESS_TYPE]->(BusinessType)`
 
 #### 4. 价格计算服务 (Pricing Service)
 
