@@ -2,46 +2,55 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.services.solution_kb.meta import parse_meta_file
+from src.services.solution_kb.meta import parse_meta_file, pick_annotation_for_template
+from src.services.solution_kb.models import TemplateSource
 
 
-def test_parse_single_template_meta_yaml(tmp_path: Path):
-    p = tmp_path / "kb.meta.yaml"
-    p.write_text(
+def test_meta_single_template_mode(tmp_path: Path):
+    meta_path = tmp_path / "kb.meta.yaml"
+    meta_path.write_text(
         """
-name: "电商Web高可用"
-description: "面向电商的高可用Web应用参考架构"
-tags: ["高可用", "电商", "三层架构"]
-industries: ["零售"]
-business_types: ["电商"]
+name: "电商高可用 Web"
+description: "ALB + EC2 + RDS，多可用区"
+source: aws_quickstart
+tags: ["high-availability", "web"]
+industries: ["retail"]
+business_types: ["ecommerce"]
 """.strip(),
         encoding="utf-8",
     )
 
-    spec = parse_meta_file(p)
+    spec = parse_meta_file(meta_path)
     assert spec.default is not None
-    assert spec.default.name == "电商Web高可用"
-    assert "零售" in spec.default.industries
-    assert "电商" in spec.default.business_types
+    assert spec.default.name == "电商高可用 Web"
+    assert spec.default.source == TemplateSource.AWS_QUICKSTART
 
 
-def test_parse_multi_template_meta_yaml(tmp_path: Path):
-    p = tmp_path / "kb.meta.yaml"
-    p.write_text(
+def test_meta_multi_template_mode_path_match_and_default_merge(tmp_path: Path):
+    meta_path = tmp_path / "kb.meta.yaml"
+    meta_path.write_text(
         """
 default:
-  tags: ["官方模板"]
+  source: aws_solutions
+  tags: ["prod-ready"]
 templates:
-  - path: template-a.yaml
-    name: "A"
-    tags: ["a1"]
-  - path: template-b.yaml
-    name: "B"
-    industries: ["金融"]
+  - path: "a/template.yaml"
+    name: "方案A"
+    tags: ["web"]
+  - path: "b/template.yaml"
+    name: "方案B"
+    tags: ["data"]
 """.strip(),
         encoding="utf-8",
     )
 
-    spec = parse_meta_file(p)
-    assert spec.default is not None
-    assert len(spec.templates) == 2
+    (tmp_path / "a").mkdir()
+    tpl_a = tmp_path / "a" / "template.yaml"
+    tpl_a.write_text("Resources: {}", encoding="utf-8")
+
+    spec = parse_meta_file(meta_path)
+    ann = pick_annotation_for_template(spec, tpl_a, base_dir=meta_path.parent)
+    assert ann is not None
+    assert ann.name == "方案A"
+    assert ann.source == TemplateSource.AWS_SOLUTIONS
+    assert set(ann.tags) == {"prod-ready", "web"}

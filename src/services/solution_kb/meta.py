@@ -85,12 +85,24 @@ def parse_meta_file(path: Path) -> MetaFileSpec:
     return MetaFileSpec.model_validate(data)
 
 
-def pick_annotation_for_template(meta: MetaFileSpec, template_path: Path) -> Optional[TemplateMetaAnnotation]:
-    """Return the best annotation for a given template path."""
-    # Multi-template mode: match by relative path.
-    rel = None
+def pick_annotation_for_template(
+    meta: MetaFileSpec,
+    template_path: Path,
+    *,
+    base_dir: Optional[Path] = None,
+) -> Optional[TemplateMetaAnnotation]:
+    """Return the best annotation for a given template path.
+
+    Args:
+        meta: Parsed meta file spec.
+        template_path: Absolute/relative path to the template file.
+        base_dir: Directory against which template paths in meta.templates[].path are resolved.
+            Defaults to template_path.parent (single-template mode).
+    """
+    # Multi-template mode: match by relative path to base_dir (usually where kb.meta.* lives).
+    base = base_dir or template_path.parent
     try:
-        rel = str(template_path.relative_to(template_path.parent))
+        rel = template_path.resolve().relative_to(base.resolve()).as_posix()
     except Exception:
         rel = template_path.name
 

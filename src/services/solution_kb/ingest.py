@@ -84,7 +84,7 @@ class SolutionKBIngestor:
                 meta_file = find_meta_file_for_template(fp)
                 if meta_file:
                     meta_spec = parse_meta_file(meta_file)
-                    ann = pick_annotation_for_template(meta_spec, fp)
+                    ann = pick_annotation_for_template(meta_spec, fp, base_dir=meta_file.parent)
                     if ann:
                         if ann.name:
                             ex.meta.name = ann.name
