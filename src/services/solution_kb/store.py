@@ -129,6 +129,9 @@ class SolutionKBStore:
         *,
         resource_type: str,
         relation: str = "both",
+        direction: str = "out",
+        industries: Optional[List[str]] = None,
+        business_types: Optional[List[str]] = None,
         limit: int = 10,
     ) -> List[Tuple[str, int]]:
         """Suggest which resource types are most often connected to a given resource type.
@@ -140,6 +143,9 @@ class SolutionKBStore:
         Args:
             resource_type: e.g. "AWS::Lambda::Function"
             relation: "depends_on" | "references" | "both"
+            direction: "out" (A -> B) | "in" (X -> A) | "both"
+            industries: optional filter; keep templates whose meta.industries intersects this list
+            business_types: optional filter; keep templates whose meta.business_types intersects this list
             limit: max target types to return
 
         Returns:
@@ -153,29 +159,48 @@ class SolutionKBStore:
         if rel not in {"depends_on", "references", "both"}:
             rel = "both"
 
+        dirn = direction.strip().lower()
+        if dirn not in {"out", "in", "both"}:
+            dirn = "out"
+
+        ind = [x.strip() for x in (industries or []) if isinstance(x, str) and x.strip()]
+        bt = [x.strip() for x in (business_types or []) if isinstance(x, str) and x.strip()]
+
         counts: Dict[str, int] = {}
 
         for ex in self.list_all():
             # Only templates with resource bodies can contribute.
             if not ex.resources:
                 continue
-            id_to_type = {r.logical_id: r.type for r in ex.resources}
-            for r in ex.resources:
-                if r.type != rt:
-                    continue
-                src = r.logical_id
 
+            if ind and not set(ind).intersection(set(ex.meta.industries or [])):
+                continue
+            if bt and not set(bt).intersection(set(ex.meta.business_types or [])):
+                continue
+
+            id_to_type = {r.logical_id: r.type for r in ex.resources}
+
+            # Build edges from each resource's lists, then aggregate by direction.
+            for r in ex.resources:
+                src_type = r.type
                 if rel in {"depends_on", "both"}:
                     for dep in r.depends_on:
-                        tgt_type = id_to_type.get(dep)
-                        if tgt_type:
-                            counts[tgt_type] = counts.get(tgt_type, 0) + 1
+                        dst_type = id_to_type.get(dep)
+                        if dst_type:
+                            # out: src_type -> dst_type; in: dst_type <- src_type
+                            if dirn in {"out", "both"} and src_type == rt:
+                                counts[dst_type] = counts.get(dst_type, 0) + 1
+                            if dirn in {"in", "both"} and dst_type == rt:
+                                counts[src_type] = counts.get(src_type, 0) + 1
 
                 if rel in {"references", "both"}:
                     for ref in r.references:
-                        tgt_type = id_to_type.get(ref)
-                        if tgt_type:
-                            counts[tgt_type] = counts.get(tgt_type, 0) + 1
+                        dst_type = id_to_type.get(ref)
+                        if dst_type:
+                            if dirn in {"out", "both"} and src_type == rt:
+                                counts[dst_type] = counts.get(dst_type, 0) + 1
+                            if dirn in {"in", "both"} and dst_type == rt:
+                                counts[src_type] = counts.get(src_type, 0) + 1
 
         ranked = sorted(counts.items(), key=lambda x: x[1], reverse=True)
         return ranked[:limit]
