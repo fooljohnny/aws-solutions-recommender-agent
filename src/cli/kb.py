@@ -13,6 +13,7 @@ from ..services.solution_kb.ingest import SolutionKBIngestor
 from ..services.solution_kb.models import TemplateSource
 from ..services.solution_kb.store_factory import get_solution_kb_store
 from ..services.solution_kb.meta import parse_meta_file
+from ..services.solution_kb.ranking import HybridRanker, OnlineWeightLearner, WeightStore, RankWeights
 
 
 app = typer.Typer(help="Solution template knowledge base (KB) utilities")
@@ -175,4 +176,59 @@ def suggest_links(
     for tgt, cnt in pairs:
         table.add_row(resource_type, tgt, str(cnt))
     console.print(table)
+
+
+@app.command("show-weights")
+def show_weights(kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (for local weight file)")):
+    """Show current ranking weights (for hybrid ranker)."""
+    store = WeightStore(root_dir=kb_dir)
+    w = store.load()
+    console.print_json(data=w.__dict__)
+
+
+@app.command("reset-weights")
+def reset_weights(kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (for local weight file)")):
+    """Reset ranking weights back to defaults."""
+    store = WeightStore(root_dir=kb_dir)
+    store.save(RankWeights())
+    console.print("[green]Weights reset.[/green]")
+
+
+@app.command("feedback")
+def feedback(
+    chosen_template_id: str = typer.Option(..., "--chosen", help="Chosen template UUID"),
+    rejected_template_id: str = typer.Option(..., "--rejected", help="Rejected template UUID"),
+    query: str = typer.Option(..., "--query", help="Original user description"),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (for local weight file)"),
+):
+    """Provide pairwise feedback to learn ranking weights (chosen > rejected)."""
+    from uuid import uuid4
+    from ..models.user_requirement import UserRequirement, RequirementType
+
+    # Convert query into a minimal requirement list (learning uses it as query text).
+    reqs = [
+        UserRequirement(
+            session_id=uuid4(),
+            requirement_type=RequirementType.CONSTRAINT,
+            requirement_value=query,
+            confidence=0.9,
+        )
+    ]
+
+    store = get_solution_kb_store(root_dir=kb_dir)
+    chosen_id = UUID(chosen_template_id)
+    rejected_id = UUID(rejected_template_id)
+
+    chosen = store.get(chosen_id) if hasattr(store, "get") else None
+    rejected = store.get(rejected_id) if hasattr(store, "get") else None
+    if not chosen or not rejected:
+        console.print("[red]Could not load chosen/rejected templates from KB.[/red]")
+        raise typer.Exit(code=1)
+
+    ws = WeightStore(root_dir=kb_dir)
+    ranker = HybridRanker(weight_store=ws)
+    learner = OnlineWeightLearner(ranker)
+    w = learner.update_pair(requirements=reqs, chosen=chosen, rejected=rejected, keywords=[query])
+    console.print("[green]Weights updated.[/green]")
+    console.print_json(data=w.__dict__)
 

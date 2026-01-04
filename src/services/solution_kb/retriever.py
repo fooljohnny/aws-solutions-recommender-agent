@@ -9,6 +9,7 @@ from ...models.user_requirement import UserRequirement
 from .models import TemplateExtract
 from .store import SolutionKBStore
 from .store_factory import get_solution_kb_store
+from .ranking import HybridRanker
 
 
 @dataclass(frozen=True)
@@ -22,22 +23,19 @@ class SolutionTemplateRetriever:
 
     def __init__(self, store: Optional[SolutionKBStore] = None):
         self.store = store or get_solution_kb_store()
+        self.ranker = HybridRanker()
 
     def retrieve(self, requirements: List[UserRequirement], *, limit: int = 5) -> List[RetrievedTemplate]:
         keywords = self._keywords_from_requirements(requirements)
-        # MVP: keyword-only. Resource type constraints can be added once we map req->services.
-        matches = self.store.search(keywords=keywords, limit=limit)
-
-        out: List[RetrievedTemplate] = []
-        for m in matches:
-            # approximate score: number of keyword hits (store uses same logic)
-            hay = " ".join(
-                [m.meta.name, m.meta.description, " ".join(m.meta.tags), " ".join(m.resource_types)]
-            ).lower()
-            score = sum(1.0 for k in keywords if k in hay)
-            out.append(RetrievedTemplate(template=m, score=score))
-        out.sort(key=lambda x: x.score, reverse=True)
-        return out[:limit]
+        # Candidate generation: take a broader slice, then re-rank with hybrid scoring.
+        candidates = self.store.search(keywords=keywords, limit=max(50, limit * 10))
+        ranked = self.ranker.rank(
+            requirements=requirements,
+            candidates=candidates,
+            keywords=keywords,
+            limit=limit,
+        )
+        return [RetrievedTemplate(template=t, score=s) for (t, s, _comps) in ranked]
 
     def _keywords_from_requirements(self, requirements: List[UserRequirement]) -> List[str]:
         kws: List[str] = []

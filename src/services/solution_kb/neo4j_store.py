@@ -107,6 +107,8 @@ class Neo4jSolutionKBStore:
           t.industries AS industries,
           t.business_types AS business_types,
           t.resource_types AS resource_types,
+          t.embedding AS embedding,
+          t.embedding_model AS embedding_model,
           param_names AS param_names,
           score AS score
         ORDER BY score DESC
@@ -130,6 +132,8 @@ class Neo4jSolutionKBStore:
                 tags=list(r.get("tags") or []),
                 industries=list(r.get("industries") or []),
                 business_types=list(r.get("business_types") or []),
+                embedding=r.get("embedding"),
+                embedding_model=r.get("embedding_model"),
             )
             params = [ParameterSpec(name=p) for p in (r.get("param_names") or []) if isinstance(p, str)]
             resource_types_list = list(r.get("resource_types") or [])
@@ -143,6 +147,57 @@ class Neo4jSolutionKBStore:
                 )
             )
         return out
+
+    def get(self, template_id: UUID) -> Optional[TemplateExtract]:
+        """Fetch a template by id (metadata-only)."""
+        tid = str(template_id)
+        cypher = """
+        MATCH (t:Template {template_id: $id})
+        OPTIONAL MATCH (t)-[:CONTAINS]->(p:Parameter)
+        WITH t, collect(DISTINCT p.name) AS param_names
+        RETURN
+          t.template_id AS template_id,
+          t.kind AS kind,
+          t.source AS source,
+          t.name AS name,
+          t.description AS description,
+          t.repository AS repository,
+          t.path AS path,
+          t.tags AS tags,
+          t.industries AS industries,
+          t.business_types AS business_types,
+          t.resource_types AS resource_types,
+          t.embedding AS embedding,
+          t.embedding_model AS embedding_model,
+          param_names AS param_names
+        """
+        with self._driver.session(database=self._database) as session:
+            row = session.run(cypher, id=tid).single()
+            if not row:
+                return None
+            r = dict(row)
+            meta = TemplateMetadata(
+                template_id=UUID(r["template_id"]),
+                kind=TemplateKind(r.get("kind") or TemplateKind.UNKNOWN.value),
+                source=TemplateSource(r.get("source") or TemplateSource.LOCAL.value),
+                name=r.get("name") or "",
+                description=r.get("description") or "",
+                repository=r.get("repository"),
+                path=r.get("path"),
+                tags=list(r.get("tags") or []),
+                industries=list(r.get("industries") or []),
+                business_types=list(r.get("business_types") or []),
+                embedding=r.get("embedding"),
+                embedding_model=r.get("embedding_model"),
+            )
+            params = [ParameterSpec(name=p) for p in (r.get("param_names") or []) if isinstance(p, str)]
+            return TemplateExtract(
+                meta=meta,
+                parameters=params,
+                resources=[],
+                outputs=[],
+                resource_types=list(r.get("resource_types") or []),
+            )
 
     def update_template_metadata(
         self,
@@ -173,13 +228,16 @@ class Neo4jSolutionKBStore:
                 params["description"] = description
             if tags is not None:
                 sets.append("t.tags = $tags")
-                params["tags"] = [t for t in tags if isinstance(t, str)]
+                from .synonyms import normalize_list
+                params["tags"] = normalize_list([t for t in tags if isinstance(t, str)])
             if industries is not None:
                 sets.append("t.industries = $industries")
-                params["industries"] = [t for t in industries if isinstance(t, str)]
+                from .synonyms import normalize_list
+                params["industries"] = normalize_list([t for t in industries if isinstance(t, str)])
             if business_types is not None:
                 sets.append("t.business_types = $business_types")
-                params["business_types"] = [t for t in business_types if isinstance(t, str)]
+                from .synonyms import normalize_list
+                params["business_types"] = normalize_list([t for t in business_types if isinstance(t, str)])
 
             if sets:
                 session.run(f"MATCH (t:Template {{template_id: $id}}) SET {', '.join(sets)}", **params)
@@ -361,6 +419,8 @@ class Neo4jSolutionKBStore:
               t.industries = $industries,
               t.business_types = $business_types,
               t.resource_types = $resource_types,
+              t.embedding = $embedding,
+              t.embedding_model = $embedding_model,
               t.search_text = $search_text
             """,
             template_id=template_id,
@@ -375,6 +435,8 @@ class Neo4jSolutionKBStore:
             industries=industries,
             business_types=business_types,
             resource_types=resource_types,
+            embedding=meta.get("embedding"),
+            embedding_model=meta.get("embedding_model"),
             search_text=search_text,
         )
 

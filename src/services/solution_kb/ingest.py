@@ -9,6 +9,8 @@ from typing import Iterable, List, Optional
 from .cfn_parser import CloudFormationTemplateParser, CloudFormationParseError
 from .meta import find_meta_file_for_template, parse_meta_file, pick_annotation_for_template
 from .models import TemplateExtract, TemplateSource
+from .ranking import HybridRanker
+from .synonyms import normalize_list
 from .store import SolutionKBStore
 from .store_factory import get_solution_kb_store
 
@@ -26,6 +28,7 @@ class SolutionKBIngestor:
     def __init__(self, store: Optional[SolutionKBStore] = None):
         self.store = store or get_solution_kb_store()
         self.cfn_parser = CloudFormationTemplateParser()
+        self.ranker = HybridRanker()
 
     def ingest_path(
         self,
@@ -102,6 +105,21 @@ class SolutionKBIngestor:
                             ex.meta.business_types = sorted(
                                 set(ex.meta.business_types).union(ann.business_types)
                             )
+
+                # Normalize synonyms for consistent filtering/ranking
+                ex.meta.industries = normalize_list(ex.meta.industries)
+                ex.meta.business_types = normalize_list(ex.meta.business_types)
+                ex.meta.tags = normalize_list(ex.meta.tags)
+
+                # Precompute embedding for semantic retrieval (stored on meta)
+                try:
+                    text = self.ranker._template_text(ex)  # best-effort; private but stable for now
+                    emb = self.ranker.embedder.embed(text)
+                    ex.meta.embedding = emb.vector
+                    ex.meta.embedding_model = emb.model
+                except Exception:
+                    # embeddings are optional
+                    pass
 
                 extracts.append(ex)
                 parsed += 1

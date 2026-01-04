@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from .models import TemplateExtract
+from .synonyms import normalize_list
 
 
 class SolutionKBStore:
@@ -113,11 +114,11 @@ class SolutionKBStore:
             if description is not None:
                 e.meta.description = description
             if tags is not None:
-                e.meta.tags = sorted(set(tags))
+                e.meta.tags = normalize_list(tags)
             if industries is not None:
-                e.meta.industries = sorted(set(industries))
+                e.meta.industries = normalize_list(industries)
             if business_types is not None:
-                e.meta.business_types = sorted(set(business_types))
+                e.meta.business_types = normalize_list(business_types)
             break
         if not found:
             return False

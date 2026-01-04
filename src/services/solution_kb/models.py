@@ -64,6 +64,9 @@ class TemplateMetadata(BaseModel):
     industries: List[str] = Field(default_factory=list)
     business_types: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+    # Optional embeddings for semantic retrieval
+    embedding: Optional[List[float]] = Field(default=None, description="Vector embedding for template search text")
+    embedding_model: Optional[str] = Field(default=None, description="Embedding model identifier")
 
 
 class ParameterSpec(BaseModel):
