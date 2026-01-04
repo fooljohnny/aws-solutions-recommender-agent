@@ -138,12 +138,32 @@ def suggest_links(
         "--relation",
         help="Edge type: depends_on | references | both",
     ),
+    direction: str = typer.Option(
+        "out",
+        "--direction",
+        help="Direction: out (A->B) | in (X->A) | both",
+    ),
+    industries: str = typer.Option(None, "--industries", help="Comma-separated industries filter"),
+    business_types: str = typer.Option(None, "--business-types", help="Comma-separated business types filter"),
     limit: int = typer.Option(10, "--limit", help="Max suggested target resource types"),
     kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
 ):
     """Suggest which resource types are most often connected to a given resource type."""
     store = get_solution_kb_store(root_dir=kb_dir)
-    pairs = store.suggest_connected_resource_types(resource_type=resource_type, relation=relation, limit=limit)
+
+    def split_csv(s: Optional[str]):
+        if not s:
+            return None
+        return [x.strip() for x in s.split(",") if x.strip()]
+
+    pairs = store.suggest_connected_resource_types(
+        resource_type=resource_type,
+        relation=relation,
+        direction=direction,
+        industries=split_csv(industries),
+        business_types=split_csv(business_types),
+        limit=limit,
+    )
     if not pairs:
         console.print("[yellow]No suggestions (graph may be empty or missing resource bodies).[/yellow]")
         raise typer.Exit(code=0)

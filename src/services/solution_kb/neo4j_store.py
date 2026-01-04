@@ -252,6 +252,9 @@ class Neo4jSolutionKBStore:
         *,
         resource_type: str,
         relation: str = "both",
+        direction: str = "out",
+        industries: Optional[List[str]] = None,
+        business_types: Optional[List[str]] = None,
         limit: int = 10,
     ) -> List[Tuple[str, int]]:
         """Suggest which resource types are most often connected to a given resource type.
@@ -263,6 +266,9 @@ class Neo4jSolutionKBStore:
         Args:
             resource_type: e.g. "AWS::Lambda::Function"
             relation: "depends_on" | "references" | "both"
+            direction: "out" (A -> B) | "in" (X -> A) | "both"
+            industries: optional filter on Template.industries
+            business_types: optional filter on Template.business_types
             limit: max target types to return
         """
         rt = (resource_type or "").strip()
@@ -273,6 +279,13 @@ class Neo4jSolutionKBStore:
         if rel not in {"depends_on", "references", "both"}:
             rel = "both"
 
+        dirn = (direction or "out").strip().lower()
+        if dirn not in {"out", "in", "both"}:
+            dirn = "out"
+
+        ind = [x.strip() for x in (industries or []) if isinstance(x, str) and x.strip()]
+        bt = [x.strip() for x in (business_types or []) if isinstance(x, str) and x.strip()]
+
         if rel == "depends_on":
             rels = ["DEPENDS_ON"]
         elif rel == "references":
@@ -280,17 +293,36 @@ class Neo4jSolutionKBStore:
         else:
             rels = ["DEPENDS_ON", "REFERENCES"]
 
-        cypher = """
-        MATCH (a:Resource)
-        WHERE a.type = $rt
-        MATCH (a)-[r]->(b:Resource)
-        WHERE type(r) IN $rels
-        RETURN b.type AS target_type, count(*) AS cnt
+        if dirn == "out":
+            match_rel = "MATCH (a)-[r]->(b:Resource)"
+            where_a = "a.type = $rt"
+            where_b = "TRUE"
+            return_field = "b.type AS target_type"
+        elif dirn == "in":
+            match_rel = "MATCH (a:Resource)-[r]->(b)"
+            where_a = "TRUE"
+            where_b = "b.type = $rt"
+            return_field = "a.type AS target_type"
+        else:
+            # both: treat edges as undirected for type-to-type co-occurrence via relations
+            match_rel = "MATCH (a)-[r]-(b:Resource)"
+            where_a = "a.type = $rt"
+            where_b = "TRUE"
+            return_field = "b.type AS target_type"
+
+        cypher = f"""
+        MATCH (t:Template)-[:CONTAINS]->(a:Resource)
+        WHERE {where_a}
+          AND ($ind = [] OR any(x IN $ind WHERE x IN t.industries))
+          AND ($bt = [] OR any(x IN $bt WHERE x IN t.business_types))
+        {match_rel}
+        WHERE type(r) IN $rels AND {where_b}
+        RETURN {return_field}, count(*) AS cnt
         ORDER BY cnt DESC
         LIMIT $limit
         """
         with self._driver.session(database=self._database) as session:
-            res = session.run(cypher, rt=rt, rels=rels, limit=limit)
+            res = session.run(cypher, rt=rt, rels=rels, ind=ind, bt=bt, limit=limit)
             return [(row["target_type"], int(row["cnt"])) for row in res if row.get("target_type")]
 
     @staticmethod
