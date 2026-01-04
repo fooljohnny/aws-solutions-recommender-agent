@@ -7,6 +7,8 @@ from openai import OpenAI
 from anthropic import Anthropic
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ..aws_knowledge.validator import AWSServiceValidator
+from ..solution_kb.retriever import SolutionTemplateRetriever
+from ..solution_kb.store import SolutionKBStore
 from ...models.architecture_recommendation import ArchitectureRecommendation
 from ...models.service import Service, ServiceType
 from ...models.configuration import Configuration
@@ -36,6 +38,8 @@ class ArchitectureRecommender:
         self.validator = validator or AWSServiceValidator(self.catalog)
         self.well_architected_checker = WellArchitectedChecker(validator, catalog)
         self.pricing_calculator = PricingCalculator()
+        kb_dir = os.getenv("SOLUTION_KB_DIR")  # default store uses .solution_kb
+        self.solution_kb = SolutionTemplateRetriever(store=SolutionKBStore(root_dir=kb_dir) if kb_dir else None)
 
         if llm_provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
@@ -137,6 +141,22 @@ class ArchitectureRecommender:
             for req in requirements
         ])
 
+        # Retrieve mature solution templates (if any) to bias towards proven architectures/configs.
+        retrieved = self.solution_kb.retrieve(requirements, limit=3)
+        templates_text = ""
+        if retrieved:
+            lines = []
+            for item in retrieved:
+                t = item.template
+                param_names = [p.name for p in t.parameters[:10]]
+                lines.append(
+                    "- "
+                    f"{t.meta.name or str(t.meta.template_id)} | "
+                    f"资源类型: {', '.join(t.resource_types[:12]) or 'N/A'} | "
+                    f"参数: {', '.join(param_names) or 'N/A'}"
+                )
+            templates_text = "\n优先参考的成熟解决方案模板（来自知识库索引，供你复用配置/拓扑思路）：\n" + "\n".join(lines) + "\n"
+
         # Get available services from catalog
         available_services = self.catalog.get_knowledge_base().get_all_services()
         services_text = "\n".join([
@@ -149,6 +169,7 @@ class ArchitectureRecommender:
 用户需求：
 {req_text}
 
+{templates_text}
 可用AWS服务（部分）：
 {services_text}
 
@@ -156,6 +177,7 @@ class ArchitectureRecommender:
 1. 服务列表（服务名称、类型、角色）
 2. 每个服务的基本配置
 3. 架构说明
+4. 如果能匹配到成熟模板，请优先沿用其资源组合与关键参数命名习惯（无需逐字复刻，但要复用最佳实践）
 
 请以JSON格式返回，格式如下：
 {{

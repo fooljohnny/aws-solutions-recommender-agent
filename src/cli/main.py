@@ -9,6 +9,9 @@ from rich.markdown import Markdown
 app = typer.Typer(help="AWS Solution Architecture Recommendation Agent CLI")
 console = Console()
 
+from .kb import app as kb_app
+app.add_typer(kb_app, name="kb")
+
 
 @app.command()
 def chat(
