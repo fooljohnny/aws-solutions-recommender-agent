@@ -6,10 +6,13 @@ import json
 import typer
 from rich.console import Console
 from rich.table import Table
+from uuid import UUID
+from typing import Optional
 
 from ..services.solution_kb.ingest import SolutionKBIngestor
 from ..services.solution_kb.models import TemplateSource
 from ..services.solution_kb.store_factory import get_solution_kb_store
+from ..services.solution_kb.meta import parse_meta_file
 
 
 app = typer.Typer(help="Solution template knowledge base (KB) utilities")
@@ -76,4 +79,53 @@ def init_neo4j():
     store = Neo4jSolutionKBStore.from_env()
     store.ensure_schema()
     console.print("[green]Neo4j KB schema initialized.[/green]")
+
+
+@app.command("validate-meta")
+def validate_meta(
+    meta_path: str = typer.Argument(..., help="Path to kb.meta.yaml/yml/json"),
+):
+    """Validate an ops metadata file (kb.meta.*)."""
+    from pathlib import Path
+
+    spec = parse_meta_file(Path(meta_path))
+    console.print("[green]Meta file is valid.[/green]")
+    # Print a small summary for ops
+    if spec.templates:
+        console.print(f"[dim]Mode[/dim]: multi-template (templates={len(spec.templates)})")
+    else:
+        console.print("[dim]Mode[/dim]: single-template/default")
+
+
+@app.command("annotate")
+def annotate(
+    template_id: str = typer.Option(..., "--template-id", help="Template UUID in KB/graph"),
+    name: str = typer.Option(None, "--name", help="Override name"),
+    description: str = typer.Option(None, "--description", help="Override description"),
+    tags: str = typer.Option(None, "--tags", help="Comma-separated tags"),
+    industries: str = typer.Option(None, "--industries", help="Comma-separated industries"),
+    business_types: str = typer.Option(None, "--business-types", help="Comma-separated business types"),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
+):
+    """Patch metadata for a template already in the KB (Neo4j or local file)."""
+    store = get_solution_kb_store(root_dir=kb_dir)
+    tid = UUID(template_id)
+
+    def split_csv(s: Optional[str]):
+        if not s:
+            return None
+        return [x.strip() for x in s.split(",") if x.strip()]
+
+    ok = store.update_template_metadata(
+        tid,
+        name=name,
+        description=description,
+        tags=split_csv(tags),
+        industries=split_csv(industries),
+        business_types=split_csv(business_types),
+    )
+    if not ok:
+        console.print(f"[red]Template not found:[/red] {tid}")
+        raise typer.Exit(code=1)
+    console.print("[green]Template metadata updated.[/green]")
 

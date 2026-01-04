@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from .cfn_parser import CloudFormationTemplateParser, CloudFormationParseError
+from .meta import find_meta_file_for_template, parse_meta_file, pick_annotation_for_template
 from .models import TemplateExtract, TemplateSource
 from .store import SolutionKBStore
 from .store_factory import get_solution_kb_store
@@ -78,6 +79,30 @@ class SolutionKBIngestor:
                 if not ex.resources and not ex.parameters:
                     skipped += 1
                     continue
+
+                # Merge ops annotations from kb.meta.* if present
+                meta_file = find_meta_file_for_template(fp)
+                if meta_file:
+                    meta_spec = parse_meta_file(meta_file)
+                    ann = pick_annotation_for_template(meta_spec, fp)
+                    if ann:
+                        if ann.name:
+                            ex.meta.name = ann.name
+                        if ann.description:
+                            ex.meta.description = ann.description
+                        if ann.source:
+                            ex.meta.source = ann.source
+                        if ann.repository:
+                            ex.meta.repository = ann.repository
+                        if ann.tags:
+                            ex.meta.tags = sorted(set(ex.meta.tags).union(ann.tags))
+                        if ann.industries:
+                            ex.meta.industries = sorted(set(ex.meta.industries).union(ann.industries))
+                        if ann.business_types:
+                            ex.meta.business_types = sorted(
+                                set(ex.meta.business_types).union(ann.business_types)
+                            )
+
                 extracts.append(ex)
                 parsed += 1
             except CloudFormationParseError:

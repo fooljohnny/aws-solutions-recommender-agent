@@ -144,6 +144,109 @@ class Neo4jSolutionKBStore:
             )
         return out
 
+    def update_template_metadata(
+        self,
+        template_id: UUID,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        industries: Optional[List[str]] = None,
+        business_types: Optional[List[str]] = None,
+    ) -> bool:
+        """Patch metadata on an existing Template node (and refresh tag relations)."""
+        tid = str(template_id)
+        with self._driver.session(database=self._database) as session:
+            # Ensure template exists
+            exists = session.run("MATCH (t:Template {template_id: $id}) RETURN t.template_id AS id", id=tid).single()
+            if not exists:
+                return False
+
+            # Update scalar fields
+            sets = []
+            params: Dict[str, Any] = {"id": tid}
+            if name is not None:
+                sets.append("t.name = $name")
+                params["name"] = name
+            if description is not None:
+                sets.append("t.description = $description")
+                params["description"] = description
+            if tags is not None:
+                sets.append("t.tags = $tags")
+                params["tags"] = [t for t in tags if isinstance(t, str)]
+            if industries is not None:
+                sets.append("t.industries = $industries")
+                params["industries"] = [t for t in industries if isinstance(t, str)]
+            if business_types is not None:
+                sets.append("t.business_types = $business_types")
+                params["business_types"] = [t for t in business_types if isinstance(t, str)]
+
+            if sets:
+                session.run(f"MATCH (t:Template {{template_id: $id}}) SET {', '.join(sets)}", **params)
+
+            # Refresh relationships if lists provided (idempotent rebuild)
+            if tags is not None:
+                session.run(
+                    """
+                    MATCH (t:Template {template_id: $id})-[r:HAS_TAG]->(:Tag)
+                    DELETE r
+                    """,
+                    id=tid,
+                )
+                for v in tags:
+                    if isinstance(v, str) and v.strip():
+                        session.run(
+                            """
+                            MATCH (t:Template {template_id: $id})
+                            MERGE (x:Tag {name: $name})
+                            MERGE (t)-[:HAS_TAG]->(x)
+                            """,
+                            id=tid,
+                            name=v.strip(),
+                        )
+
+            if industries is not None:
+                session.run(
+                    """
+                    MATCH (t:Template {template_id: $id})-[r:HAS_INDUSTRY]->(:Industry)
+                    DELETE r
+                    """,
+                    id=tid,
+                )
+                for v in industries:
+                    if isinstance(v, str) and v.strip():
+                        session.run(
+                            """
+                            MATCH (t:Template {template_id: $id})
+                            MERGE (x:Industry {name: $name})
+                            MERGE (t)-[:HAS_INDUSTRY]->(x)
+                            """,
+                            id=tid,
+                            name=v.strip(),
+                        )
+
+            if business_types is not None:
+                session.run(
+                    """
+                    MATCH (t:Template {template_id: $id})-[r:HAS_BUSINESS_TYPE]->(:BusinessType)
+                    DELETE r
+                    """,
+                    id=tid,
+                )
+                for v in business_types:
+                    if isinstance(v, str) and v.strip():
+                        session.run(
+                            """
+                            MATCH (t:Template {template_id: $id})
+                            MERGE (x:BusinessType {name: $name})
+                            MERGE (t)-[:HAS_BUSINESS_TYPE]->(x)
+                            """,
+                            id=tid,
+                            name=v.strip(),
+                        )
+
+        return True
+
     @staticmethod
     def _upsert_one_tx(tx, ex: Dict[str, Any]) -> None:
         meta = ex["meta"]

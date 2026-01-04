@@ -91,3 +91,36 @@ class SolutionKBStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [e for _, e in scored[:limit]]
 
+    def update_template_metadata(
+        self,
+        template_id: UUID,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        industries: Optional[List[str]] = None,
+        business_types: Optional[List[str]] = None,
+    ) -> bool:
+        """Update metadata for a template in the local store."""
+        all_items = self.list_all()
+        found = False
+        for e in all_items:
+            if e.meta.template_id != template_id:
+                continue
+            found = True
+            if name is not None:
+                e.meta.name = name
+            if description is not None:
+                e.meta.description = description
+            if tags is not None:
+                e.meta.tags = sorted(set(tags))
+            if industries is not None:
+                e.meta.industries = sorted(set(industries))
+            if business_types is not None:
+                e.meta.business_types = sorted(set(business_types))
+            break
+        if not found:
+            return False
+        self.upsert_many(all_items)
+        return True
+
