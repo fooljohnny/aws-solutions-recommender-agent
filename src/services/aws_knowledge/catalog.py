@@ -1,12 +1,16 @@
 """AWS service catalog loader with JSON knowledge base loading and RAG support."""
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from .base import AWSKnowledgeBase, ServiceMetadata, ServiceCategory
 from .embedding import EmbeddingService
-from ...utils.storage.milvus import MilvusClient
+
+if TYPE_CHECKING:
+    from ...utils.storage.milvus import MilvusClient
 
 
 class AWSServiceCatalog:
@@ -31,11 +35,14 @@ class AWSServiceCatalog:
         self.embedding_provider = embedding_provider
         
         # Initialize RAG components if enabled
-        self.milvus_client: Optional[MilvusClient] = None
+        self.milvus_client: Optional["MilvusClient"] = None
         self.embedding_service: Optional[EmbeddingService] = None
         
         if self.use_rag:
             try:
+                # Import lazily so pymilvus remains an optional dependency.
+                from ...utils.storage.milvus import MilvusClient
+
                 self.embedding_service = EmbeddingService(provider=embedding_provider)
                 embedding_dim = self.embedding_service.get_dimension()
                 self.milvus_client = MilvusClient(embedding_dim=embedding_dim)

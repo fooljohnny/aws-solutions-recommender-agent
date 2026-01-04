@@ -1,7 +1,9 @@
 """Storage utilities for MySQL, Redis, and Milvus."""
 
+from __future__ import annotations
+
 import os
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Union
 
 # Try to import MySQL client
 try:
@@ -12,8 +14,11 @@ except ImportError:
 
 from .sqlite import SQLiteClient
 
+if TYPE_CHECKING:
+    from .mysql import MySQLClient as MySQLClientType
 
-def get_storage_client(storage_client=None) -> Union[MySQLClient, SQLiteClient]:
+
+def get_storage_client(storage_client=None) -> Union["MySQLClient", SQLiteClient]:
     """Get storage client based on DATABASE_TYPE environment variable.
     
     Args:
