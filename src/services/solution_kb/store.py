@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from .models import TemplateExtract
@@ -123,4 +123,60 @@ class SolutionKBStore:
             return False
         self.upsert_many(all_items)
         return True
+
+    def suggest_connected_resource_types(
+        self,
+        *,
+        resource_type: str,
+        relation: str = "both",
+        limit: int = 10,
+    ) -> List[Tuple[str, int]]:
+        """Suggest which resource types are most often connected to a given resource type.
+
+        Local-store implementation computes statistics within each template:
+        - Build logical_id -> resource_type map
+        - Count edges (DEPENDS_ON and/or REFERENCES) between resource types
+
+        Args:
+            resource_type: e.g. "AWS::Lambda::Function"
+            relation: "depends_on" | "references" | "both"
+            limit: max target types to return
+
+        Returns:
+            List of (target_resource_type, count) sorted by count desc
+        """
+        rt = (resource_type or "").strip()
+        if not rt:
+            return []
+
+        rel = relation.strip().lower()
+        if rel not in {"depends_on", "references", "both"}:
+            rel = "both"
+
+        counts: Dict[str, int] = {}
+
+        for ex in self.list_all():
+            # Only templates with resource bodies can contribute.
+            if not ex.resources:
+                continue
+            id_to_type = {r.logical_id: r.type for r in ex.resources}
+            for r in ex.resources:
+                if r.type != rt:
+                    continue
+                src = r.logical_id
+
+                if rel in {"depends_on", "both"}:
+                    for dep in r.depends_on:
+                        tgt_type = id_to_type.get(dep)
+                        if tgt_type:
+                            counts[tgt_type] = counts.get(tgt_type, 0) + 1
+
+                if rel in {"references", "both"}:
+                    for ref in r.references:
+                        tgt_type = id_to_type.get(ref)
+                        if tgt_type:
+                            counts[tgt_type] = counts.get(tgt_type, 0) + 1
+
+        ranked = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+        return ranked[:limit]
 

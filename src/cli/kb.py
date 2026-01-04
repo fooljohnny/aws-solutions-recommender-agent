@@ -129,3 +129,30 @@ def annotate(
         raise typer.Exit(code=1)
     console.print("[green]Template metadata updated.[/green]")
 
+
+@app.command("suggest-links")
+def suggest_links(
+    resource_type: str = typer.Option(..., "--resource-type", help="Resource type, e.g. AWS::Lambda::Function"),
+    relation: str = typer.Option(
+        "both",
+        "--relation",
+        help="Edge type: depends_on | references | both",
+    ),
+    limit: int = typer.Option(10, "--limit", help="Max suggested target resource types"),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
+):
+    """Suggest which resource types are most often connected to a given resource type."""
+    store = get_solution_kb_store(root_dir=kb_dir)
+    pairs = store.suggest_connected_resource_types(resource_type=resource_type, relation=relation, limit=limit)
+    if not pairs:
+        console.print("[yellow]No suggestions (graph may be empty or missing resource bodies).[/yellow]")
+        raise typer.Exit(code=0)
+
+    table = Table(title="Most-likely connected resource types")
+    table.add_column("source_type")
+    table.add_column("target_type")
+    table.add_column("count", justify="right")
+    for tgt, cnt in pairs:
+        table.add_row(resource_type, tgt, str(cnt))
+    console.print(table)
+

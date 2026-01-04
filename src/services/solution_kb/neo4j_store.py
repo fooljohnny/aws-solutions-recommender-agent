@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from .models import ParameterSpec, TemplateExtract, TemplateKind, TemplateMetadata, TemplateSource
@@ -246,6 +246,52 @@ class Neo4jSolutionKBStore:
                         )
 
         return True
+
+    def suggest_connected_resource_types(
+        self,
+        *,
+        resource_type: str,
+        relation: str = "both",
+        limit: int = 10,
+    ) -> List[Tuple[str, int]]:
+        """Suggest which resource types are most often connected to a given resource type.
+
+        Uses the graph edges between Resource nodes:
+        - :DEPENDS_ON
+        - :REFERENCES
+
+        Args:
+            resource_type: e.g. "AWS::Lambda::Function"
+            relation: "depends_on" | "references" | "both"
+            limit: max target types to return
+        """
+        rt = (resource_type or "").strip()
+        if not rt:
+            return []
+
+        rel = (relation or "both").strip().lower()
+        if rel not in {"depends_on", "references", "both"}:
+            rel = "both"
+
+        if rel == "depends_on":
+            rels = ["DEPENDS_ON"]
+        elif rel == "references":
+            rels = ["REFERENCES"]
+        else:
+            rels = ["DEPENDS_ON", "REFERENCES"]
+
+        cypher = """
+        MATCH (a:Resource)
+        WHERE a.type = $rt
+        MATCH (a)-[r]->(b:Resource)
+        WHERE type(r) IN $rels
+        RETURN b.type AS target_type, count(*) AS cnt
+        ORDER BY cnt DESC
+        LIMIT $limit
+        """
+        with self._driver.session(database=self._database) as session:
+            res = session.run(cypher, rt=rt, rels=rels, limit=limit)
+            return [(row["target_type"], int(row["cnt"])) for row in res if row.get("target_type")]
 
     @staticmethod
     def _upsert_one_tx(tx, ex: Dict[str, Any]) -> None:
