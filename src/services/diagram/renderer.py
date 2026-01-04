@@ -110,19 +110,26 @@ class DiagramRenderer:
                 "-f", format,
             ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
 
-            if result.returncode != 0:
-                # Fallback: return Mermaid source as-is if CLI not available
+                if result.returncode != 0:
+                    # Fallback: return Mermaid source as-is if CLI not available
+                    if format == "svg":
+                        return self._fallback_svg(mermaid_source)
+                    else:
+                        raise RuntimeError(f"Mermaid CLI failed: {result.stderr}")
+            except FileNotFoundError:
+                # Mermaid CLI not found, use fallback
                 if format == "svg":
                     return self._fallback_svg(mermaid_source)
                 else:
-                    raise RuntimeError(f"Mermaid CLI failed: {result.stderr}")
+                    raise RuntimeError(f"Mermaid CLI not found. Please install @mermaid-js/mermaid-cli")
 
             # Read rendered output
             with open(output_path, "rb" if format == "png" else "r", encoding="utf-8" if format == "svg" else None) as f:

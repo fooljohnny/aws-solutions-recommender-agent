@@ -85,10 +85,24 @@ class ArchitectureRecommender:
         services = []
         configurations = []
         for svc_data in service_recommendations.get("services", []):
+            # Normalize service type (handle variations like "network" -> "networking")
+            service_type_str = svc_data.get("type", "other").lower()
+            type_mapping = {
+                "network": "networking",
+                "net": "networking",
+            }
+            service_type_str = type_mapping.get(service_type_str, service_type_str)
+            
+            try:
+                service_type = ServiceType(service_type_str)
+            except ValueError:
+                # Fallback to OTHER if type is not recognized
+                service_type = ServiceType.OTHER
+            
             service = Service(
                 recommendation_id=UUID("00000000-0000-0000-0000-000000000000"),  # Will be set later
                 aws_service_name=svc_data["name"],
-                service_type=ServiceType(svc_data.get("type", "other")),
+                service_type=service_type,
                 role=svc_data.get("role", ""),
                 region=svc_data.get("region"),
             )

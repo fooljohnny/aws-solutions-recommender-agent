@@ -4,28 +4,30 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 import json
+import os
 from src.models.conversation import Conversation
-from src.utils.storage.mysql import MySQLClient
+from src.utils.storage import get_storage_client
 
 
 class ConversationRepository:
     """Repository for Conversation entity operations."""
 
-    def __init__(self, mysql_client: Optional[MySQLClient] = None):
-        """Initialize repository with MySQL client.
+    def __init__(self, storage_client=None):
+        """Initialize repository with storage client.
 
         Args:
-            mysql_client: MySQL client instance (creates new if not provided)
+            storage_client: Storage client instance (MySQL or SQLite, creates new if not provided)
         """
-        self.mysql = mysql_client or MySQLClient()
+        self.storage = get_storage_client(storage_client)
         # Initialize connection on first use
         self._initialized = False
 
     async def _ensure_initialized(self):
-        """Ensure MySQL connection is initialized."""
+        """Ensure storage connection is initialized."""
         if not self._initialized:
-            await self.mysql.connect()
-            await self.mysql.initialize_database()
+            await self.storage.connect()
+            if hasattr(self.storage, 'initialize_database'):
+                await self.storage.initialize_database()
             self._initialized = True
 
     async def create(self, conversation: Conversation) -> Conversation:
@@ -39,15 +41,26 @@ class ConversationRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        INSERT INTO conversations (
-            session_id, created_at, last_accessed_at, expires_at,
-            conversation_history, current_context, user_preferences
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            last_accessed_at = VALUES(last_accessed_at),
-            current_context = VALUES(current_context)
-        """
+        # Use INSERT OR REPLACE for SQLite, ON DUPLICATE KEY UPDATE for MySQL
+        is_sqlite = hasattr(self.storage, 'db_path')
+        
+        if is_sqlite:
+            query = """
+            INSERT OR REPLACE INTO conversations (
+                session_id, created_at, last_accessed_at, expires_at,
+                conversation_history, current_context, user_preferences
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+        else:
+            query = """
+            INSERT INTO conversations (
+                session_id, created_at, last_accessed_at, expires_at,
+                conversation_history, current_context, user_preferences
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                last_accessed_at = VALUES(last_accessed_at),
+                current_context = VALUES(current_context)
+            """
 
         conversation_history_json = json.dumps(
             [msg.model_dump(mode="json") if hasattr(msg, "model_dump") else msg for msg in conversation.conversation_history]
@@ -63,7 +76,7 @@ class ConversationRepository:
             json.dumps(conversation.user_preferences) if conversation.user_preferences else None,
         )
 
-        await self.mysql.execute(query, params)
+        await self.storage.execute(query, params)
         return conversation
 
     async def get_by_session_id(self, session_id: UUID) -> Optional[Conversation]:
@@ -77,8 +90,13 @@ class ConversationRepository:
         """
         await self._ensure_initialized()
 
-        query = "SELECT * FROM conversations WHERE session_id = %s"
-        row = await self.mysql.execute_one(query, (str(session_id),))
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = "SELECT * FROM conversations WHERE session_id = ?"
+        else:
+            query = "SELECT * FROM conversations WHERE session_id = %s"
+        row = await self.storage.execute_one(query, (str(session_id),))
 
         if not row:
             return None
@@ -109,14 +127,26 @@ class ConversationRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        UPDATE conversations SET
-            last_accessed_at = %s,
-            conversation_history = %s,
-            current_context = %s,
-            user_preferences = %s
-        WHERE session_id = %s
-        """
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            UPDATE conversations SET
+                last_accessed_at = ?,
+                conversation_history = ?,
+                current_context = ?,
+                user_preferences = ?
+            WHERE session_id = ?
+            """
+        else:
+            query = """
+            UPDATE conversations SET
+                last_accessed_at = %s,
+                conversation_history = %s,
+                current_context = %s,
+                user_preferences = %s
+            WHERE session_id = %s
+            """
 
         conversation_history_json = json.dumps(
             [msg.model_dump(mode="json") if hasattr(msg, "model_dump") else msg for msg in conversation.conversation_history]
@@ -130,7 +160,7 @@ class ConversationRepository:
             str(conversation.session_id),
         )
 
-        await self.mysql.execute(query, params)
+        await self.storage.execute(query, params)
         return conversation
 
     async def delete(self, session_id: UUID) -> bool:
@@ -145,8 +175,13 @@ class ConversationRepository:
         await self._ensure_initialized()
 
         try:
-            query = "DELETE FROM conversations WHERE session_id = %s"
-            await self.mysql.execute(query, (str(session_id),))
+            # Convert query syntax based on storage type
+            is_sqlite = hasattr(self.storage, 'db_path')
+            if is_sqlite:
+                query = "DELETE FROM conversations WHERE session_id = ?"
+            else:
+                query = "DELETE FROM conversations WHERE session_id = %s"
+            await self.storage.execute(query, (str(session_id),))
             return True
         except Exception:
             return False

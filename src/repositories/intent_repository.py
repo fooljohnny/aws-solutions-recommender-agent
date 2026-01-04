@@ -4,7 +4,7 @@ from typing import Optional, List
 from uuid import UUID
 import json
 from src.models.intent import Intent, IntentType, IntentStatus
-from src.utils.storage.mysql import MySQLClient
+from src.utils.storage import get_storage_client
 
 
 class IntentRepository:
@@ -14,20 +14,21 @@ class IntentRepository:
     This repository provides additional query capabilities if needed.
     """
 
-    def __init__(self, mysql_client: Optional[MySQLClient] = None):
-        """Initialize repository with MySQL client.
+    def __init__(self, storage_client=None):
+        """Initialize repository with storage client.
 
         Args:
-            mysql_client: MySQL client instance (creates new if not provided)
+            storage_client: Storage client instance (MySQL or SQLite, creates new if not provided)
         """
-        self.mysql = mysql_client or MySQLClient()
+        self.storage = get_storage_client(storage_client)
         self._initialized = False
 
     async def _ensure_initialized(self):
-        """Ensure MySQL connection is initialized."""
+        """Ensure storage connection is initialized."""
         if not self._initialized:
-            await self.mysql.connect()
-            await self.mysql.initialize_database()
+            await self.storage.connect()
+            if hasattr(self.storage, 'initialize_database'):
+                await self.storage.initialize_database()
             self._initialized = True
 
     async def create(self, intent: Intent) -> Intent:
@@ -41,12 +42,22 @@ class IntentRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        INSERT INTO intents (
-            intent_id, message_id, intent_type, priority, confidence,
-            extracted_entities, status
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            INSERT INTO intents (
+                intent_id, message_id, intent_type, priority, confidence,
+                extracted_entities, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+        else:
+            query = """
+            INSERT INTO intents (
+                intent_id, message_id, intent_type, priority, confidence,
+                extracted_entities, status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
 
         params = (
             str(intent.intent_id),
@@ -58,7 +69,7 @@ class IntentRepository:
             intent.status.value,
         )
 
-        await self.mysql.execute(query, params)
+        await self.storage.execute(query, params)
         return intent
 
     async def get_by_message_id(self, message_id: UUID) -> List[Intent]:
@@ -72,8 +83,13 @@ class IntentRepository:
         """
         await self._ensure_initialized()
 
-        query = "SELECT * FROM intents WHERE message_id = %s"
-        rows = await self.mysql.execute(query, (str(message_id),))
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = "SELECT * FROM intents WHERE message_id = ?"
+        else:
+            query = "SELECT * FROM intents WHERE message_id = %s"
+        rows = await self.storage.execute(query, (str(message_id),))
 
         intents = []
         for row in rows:

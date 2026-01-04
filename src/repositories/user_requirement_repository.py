@@ -3,26 +3,27 @@
 from typing import Optional, List
 from uuid import UUID
 from src.models.user_requirement import UserRequirement, RequirementType
-from src.utils.storage.mysql import MySQLClient
+from src.utils.storage import get_storage_client
 
 
 class UserRequirementRepository:
     """Repository for UserRequirement entity operations."""
 
-    def __init__(self, mysql_client: Optional[MySQLClient] = None):
-        """Initialize repository with MySQL client.
+    def __init__(self, storage_client=None):
+        """Initialize repository with storage client.
 
         Args:
-            mysql_client: MySQL client instance (creates new if not provided)
+            storage_client: Storage client instance (MySQL or SQLite, creates new if not provided)
         """
-        self.mysql = mysql_client or MySQLClient()
+        self.storage = get_storage_client(storage_client)
         self._initialized = False
 
     async def _ensure_initialized(self):
-        """Ensure MySQL connection is initialized."""
+        """Ensure storage connection is initialized."""
         if not self._initialized:
-            await self.mysql.connect()
-            await self.mysql.initialize_database()
+            await self.storage.connect()
+            if hasattr(self.storage, 'initialize_database'):
+                await self.storage.initialize_database()
             self._initialized = True
 
     async def create(self, requirement: UserRequirement) -> UserRequirement:
@@ -36,12 +37,22 @@ class UserRequirementRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        INSERT INTO user_requirements (
-            requirement_id, session_id, extracted_at, requirement_type,
-            requirement_value, confidence, source_message_id
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            INSERT INTO user_requirements (
+                requirement_id, session_id, extracted_at, requirement_type,
+                requirement_value, confidence, source_message_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+        else:
+            query = """
+            INSERT INTO user_requirements (
+                requirement_id, session_id, extracted_at, requirement_type,
+                requirement_value, confidence, source_message_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
 
         params = (
             str(requirement.requirement_id),
@@ -53,7 +64,7 @@ class UserRequirementRepository:
             str(requirement.source_message_id) if requirement.source_message_id else None,
         )
 
-        await self.mysql.execute(query, params)
+        await self.storage.execute(query, params)
         return requirement
 
     async def get_by_session_id(self, session_id: UUID) -> List[UserRequirement]:
@@ -67,8 +78,13 @@ class UserRequirementRepository:
         """
         await self._ensure_initialized()
 
-        query = "SELECT * FROM user_requirements WHERE session_id = %s ORDER BY extracted_at DESC"
-        rows = await self.mysql.execute(query, (str(session_id),))
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = "SELECT * FROM user_requirements WHERE session_id = ? ORDER BY extracted_at DESC"
+        else:
+            query = "SELECT * FROM user_requirements WHERE session_id = %s ORDER BY extracted_at DESC"
+        rows = await self.storage.execute(query, (str(session_id),))
 
         requirements = []
         for row in rows:
@@ -100,12 +116,21 @@ class UserRequirementRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        SELECT * FROM user_requirements
-        WHERE session_id = %s AND requirement_type = %s
-        ORDER BY extracted_at DESC
-        """
-        rows = await self.mysql.execute(query, (str(session_id), requirement_type))
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            SELECT * FROM user_requirements
+            WHERE session_id = ? AND requirement_type = ?
+            ORDER BY extracted_at DESC
+            """
+        else:
+            query = """
+            SELECT * FROM user_requirements
+            WHERE session_id = %s AND requirement_type = %s
+            ORDER BY extracted_at DESC
+            """
+        rows = await self.storage.execute(query, (str(session_id), requirement_type))
 
         requirements = []
         for row in rows:

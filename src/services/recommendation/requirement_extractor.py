@@ -2,6 +2,7 @@
 
 import os
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 from openai import OpenAI
 from anthropic import Anthropic
 from groq import Groq
@@ -52,6 +53,7 @@ class RequirementExtractor:
         user_message: str,
         conversation_context: Optional[List[Dict[str, Any]]] = None,
         previous_requirements: Optional[List[UserRequirement]] = None,
+        session_id: Optional[UUID] = None,
     ) -> List[UserRequirement]:
         """Extract requirements from user message with context awareness.
 
@@ -59,6 +61,7 @@ class RequirementExtractor:
             user_message: User's natural language message
             conversation_context: Previous conversation messages for context
             previous_requirements: Previously extracted requirements for integration
+            session_id: Session ID for the requirements
 
         Returns:
             List of extracted requirements (merged with previous if provided)
@@ -73,7 +76,7 @@ class RequirementExtractor:
         requirements = []
         for req_data in extracted_data.get("requirements", []):
             requirement = UserRequirement(
-                session_id=req_data.get("session_id", ""),  # Will be set by caller
+                session_id=session_id or req_data.get("session_id"),  # Use provided session_id or from data
                 requirement_type=RequirementType(req_data["requirement_type"]),
                 requirement_value=req_data["requirement_value"],
                 confidence=req_data.get("confidence", 0.8),

@@ -51,6 +51,12 @@ class AgentState(BaseModel):
     )
     processing_complete: bool = Field(default=False, description="Whether current message processing is complete")
 
+    # Response content
+    response_content: Optional[str] = Field(
+        default=None,
+        description="Formatted response content for user"
+    )
+
     # Error handling
     errors: List[str] = Field(default_factory=list, description="Processing errors")
     warnings: List[str] = Field(default_factory=list, description="Processing warnings")

@@ -1,5 +1,6 @@
 """Interactive chat session for CLI."""
 
+import sys
 import asyncio
 from typing import Optional
 from uuid import UUID
@@ -8,13 +9,6 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 from rich.syntax import Syntax
-
-from typing import Optional
-from uuid import UUID
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.markdown import Markdown
 
 from ..services.conversation.orchestrator import ConversationOrchestrator
 from ..repositories.conversation_repository import ConversationRepository
@@ -64,11 +58,25 @@ class ChatSession:
 
         self.console.print("\n[bold]Enter your requirements in Chinese. Type 'exit' or 'quit' to end.[/bold]\n")
 
+        # Check if running in interactive mode
+        is_interactive = sys.stdin.isatty()
+
         # Main chat loop
         while True:
             try:
                 # Get user input
-                user_input = Prompt.ask("[bold cyan]You[/bold cyan]")
+                try:
+                    if is_interactive:
+                        user_input = Prompt.ask("[bold cyan]You[/bold cyan]")
+                    else:
+                        # Fallback to standard input for non-interactive environments
+                        self.console.print("[bold cyan]You[/bold cyan]: ", end="")
+                        user_input = input()
+                except (EOFError, KeyboardInterrupt):
+                    # Handle EOF gracefully
+                    self.console.print("\n[yellow]Goodbye![/yellow]")
+                    break
+
                 if user_input.lower() in ["exit", "quit", "退出"]:
                     self.console.print("[yellow]Goodbye![/yellow]")
                     break
@@ -85,6 +93,10 @@ class ChatSession:
 
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Interrupted. Type 'exit' to quit.[/yellow]")
+            except EOFError:
+                # Handle EOF in the outer loop as well
+                self.console.print("\n[yellow]Input stream closed. Goodbye![/yellow]")
+                break
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
@@ -108,7 +120,7 @@ class ChatSession:
             role=MessageRole.USER,
             content=user_message,
         )
-        asyncio.run(self.message_repo.create(user_msg))
+        await self.message_repo.create(user_msg)
 
         # Process through orchestrator
         response_data = await self.orchestrator.process_message(
@@ -124,13 +136,13 @@ class ChatSession:
             content=response_data.get("content", ""),
             metadata=response_data.get("metadata", {}),
         )
-        asyncio.run(self.message_repo.create(assistant_msg))
+        await self.message_repo.create(assistant_msg)
 
         # Update conversation
         conversation.conversation_history.append(user_msg)
         conversation.conversation_history.append(assistant_msg)
         conversation.last_accessed_at = user_msg.timestamp
-        asyncio.run(self.conversation_repo.update(conversation))
+        await self.conversation_repo.update(conversation)
 
         return response_data.get("content", "")
 

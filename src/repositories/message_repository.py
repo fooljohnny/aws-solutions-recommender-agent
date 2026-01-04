@@ -5,26 +5,27 @@ from uuid import UUID
 from datetime import datetime
 import json
 from src.models.message import Message, MessageRole
-from src.utils.storage.mysql import MySQLClient
+from src.utils.storage import get_storage_client
 
 
 class MessageRepository:
     """Repository for Message entity operations."""
 
-    def __init__(self, mysql_client: Optional[MySQLClient] = None):
-        """Initialize repository with MySQL client.
+    def __init__(self, storage_client=None):
+        """Initialize repository with storage client.
 
         Args:
-            mysql_client: MySQL client instance (creates new if not provided)
+            storage_client: Storage client instance (MySQL or SQLite, creates new if not provided)
         """
-        self.mysql = mysql_client or MySQLClient()
+        self.storage = get_storage_client(storage_client)
         self._initialized = False
 
     async def _ensure_initialized(self):
-        """Ensure MySQL connection is initialized."""
+        """Ensure storage connection is initialized."""
         if not self._initialized:
-            await self.mysql.connect()
-            await self.mysql.initialize_database()
+            await self.storage.connect()
+            if hasattr(self.storage, 'initialize_database'):
+                await self.storage.initialize_database()
             self._initialized = True
 
     async def create(self, message: Message) -> Message:
@@ -38,11 +39,20 @@ class MessageRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        INSERT INTO messages (
-            message_id, session_id, timestamp, role, content, intents, metadata
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            INSERT INTO messages (
+                message_id, session_id, timestamp, role, content, intents, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+        else:
+            query = """
+            INSERT INTO messages (
+                message_id, session_id, timestamp, role, content, intents, metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
 
         params = (
             str(message.message_id),
@@ -54,7 +64,7 @@ class MessageRepository:
             json.dumps(message.metadata) if message.metadata else None,
         )
 
-        await self.mysql.execute(query, params)
+        await self.storage.execute(query, params)
         return message
 
     async def get_by_session_id(
@@ -73,14 +83,24 @@ class MessageRepository:
         """
         await self._ensure_initialized()
 
-        query = """
-        SELECT * FROM messages
-        WHERE session_id = %s
-        ORDER BY timestamp DESC
-        LIMIT %s
-        """
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = """
+            SELECT * FROM messages
+            WHERE session_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """
+        else:
+            query = """
+            SELECT * FROM messages
+            WHERE session_id = %s
+            ORDER BY timestamp DESC
+            LIMIT %s
+            """
 
-        rows = await self.mysql.execute(query, (str(session_id), limit or 50))
+        rows = await self.storage.execute(query, (str(session_id), limit or 50))
 
         messages = []
         for row in rows:
@@ -110,8 +130,13 @@ class MessageRepository:
         """
         await self._ensure_initialized()
 
-        query = "SELECT * FROM messages WHERE message_id = %s"
-        row = await self.mysql.execute_one(query, (str(message_id),))
+        # Convert query syntax based on storage type
+        is_sqlite = hasattr(self.storage, 'db_path')
+        if is_sqlite:
+            query = "SELECT * FROM messages WHERE message_id = ?"
+        else:
+            query = "SELECT * FROM messages WHERE message_id = %s"
+        row = await self.storage.execute_one(query, (str(message_id),))
 
         if not row:
             return None

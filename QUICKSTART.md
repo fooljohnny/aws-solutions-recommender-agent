@@ -29,12 +29,24 @@ AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your_aws_access_key_id
 AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
 
-# MySQL配置（必需，用于数据存储）
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=aws_arch_agent
+# 数据库配置（必需，用于数据存储）
+# Database Configuration (Required, for data storage)
+
+# 数据库类型：mysql 或 sqlite（默认：sqlite）
+# Database Type: mysql or sqlite (default: sqlite)
+DATABASE_TYPE=sqlite
+
+# SQLite配置（当 DATABASE_TYPE=sqlite 时使用，默认路径：./data/aws_arch_agent.db）
+# SQLite Configuration (used when DATABASE_TYPE=sqlite, default: ./data/aws_arch_agent.db)
+# SQLITE_DB_PATH=./data/aws_arch_agent.db
+
+# MySQL配置（当 DATABASE_TYPE=mysql 时使用）
+# MySQL Configuration (used when DATABASE_TYPE=mysql)
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_USER=root
+# MYSQL_PASSWORD=your_mysql_password
+# MYSQL_DATABASE=aws_arch_agent
 
 # Redis配置（可选，用于价格缓存）
 REDIS_HOST=localhost
@@ -92,10 +104,14 @@ Agent: 根据您的需求，我为您推荐以下AWS架构方案...
 
 ## 注意事项
 
-1. **首次运行**：程序会自动创建MySQL数据库和表（如果不存在），确保MySQL服务正在运行
+1. **首次运行**：
+   - 如果使用SQLite（默认），程序会自动创建数据库文件（无需额外配置）
+   - 如果使用MySQL，程序会自动创建数据库和表（如果不存在），确保MySQL服务正在运行
 2. **API密钥**：必须配置OPENAI_API_KEY、ANTHROPIC_API_KEY或GROQ_API_KEY之一才能使用
 3. **存储服务**：
-   - MySQL是必需的，用于存储会话、消息、意图等数据
+   - 数据库是必需的，用于存储会话、消息、意图等数据
+     - SQLite（默认）：无需额外配置，适合开发和测试
+     - MySQL：适合生产环境，需要配置连接信息
    - Redis是可选的，用于价格缓存（未配置时价格查询功能仍可用）
 4. **错误处理**：如果遇到错误，程序会显示详细的错误信息
 
@@ -109,10 +125,11 @@ Agent: 根据您的需求，我为您推荐以下AWS架构方案...
 
 ### 问题：MySQL连接失败
 **解决**：
-- 确保MySQL服务正在运行
+- 如果使用MySQL，确保MySQL服务正在运行
 - 检查`.env`文件中的MySQL配置是否正确
 - 确认数据库用户有创建数据库和表的权限
 - 检查防火墙设置，确保端口3306可访问
+- **推荐**：如果不需要MySQL，可以切换到SQLite（默认），只需设置`DATABASE_TYPE=sqlite`，无需额外配置
 
 ### 问题：数据库表不存在
 **解决**：程序会在首次运行时自动创建数据库和表。如果表不存在，检查：
