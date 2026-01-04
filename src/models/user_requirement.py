@@ -1,6 +1,6 @@
 """UserRequirement model representing extracted user requirements from conversation."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 from enum import Enum
@@ -21,7 +21,7 @@ class UserRequirement(BaseModel):
 
     requirement_id: UUID = Field(default_factory=uuid4, description="Unique requirement identifier (UUID)")
     session_id: UUID = Field(description="Reference to Conversation")
-    extracted_at: datetime = Field(default_factory=datetime.utcnow, description="Extraction timestamp")
+    extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Extraction timestamp")
     requirement_type: RequirementType = Field(description="Requirement category")
     requirement_value: str = Field(description="Requirement value (e.g., 'web application', '1000 users', 'high availability')")
     confidence: float = Field(ge=0.0, le=1.0, description="Extraction confidence score")
