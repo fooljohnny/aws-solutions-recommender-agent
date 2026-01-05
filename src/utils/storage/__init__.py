@@ -1,5 +1,7 @@
 """Storage utilities for MySQL, Redis, and Milvus."""
 
+from __future__ import annotations
+
 import os
 from typing import Optional, Union, TYPE_CHECKING
 

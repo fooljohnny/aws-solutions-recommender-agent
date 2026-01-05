@@ -2,6 +2,8 @@
 
 import sys
 import asyncio
+import json
+import shlex
 from typing import Optional
 from uuid import UUID
 from rich.console import Console
@@ -15,6 +17,9 @@ from ..repositories.conversation_repository import ConversationRepository
 from ..repositories.message_repository import MessageRepository
 from ..models.conversation import Conversation
 from ..models.message import Message, MessageRole
+from ..skills.base import SkillContext
+from ..skills.defaults import create_default_registry
+from ..skills.registry import SkillRegistry
 
 
 class ChatSession:
@@ -22,21 +27,27 @@ class ChatSession:
 
     def __init__(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | UUID | None = None,
         llm_provider: str = "openai",
+        skills_registry: SkillRegistry | None = None,
     ):
         """Initialize chat session.
 
         Args:
             session_id: Optional session ID to resume conversation
             llm_provider: LLM provider name
+            skills_registry: Optional skills registry for slash-commands/tooling
         """
         self.console = Console()
         self.llm_provider = llm_provider
-        self.session_id = UUID(session_id) if session_id else None
+        if isinstance(session_id, UUID):
+            self.session_id = session_id
+        else:
+            self.session_id = UUID(str(session_id)) if session_id else None
         self.orchestrator = ConversationOrchestrator(llm_provider=llm_provider)
         self.conversation_repo = ConversationRepository()
         self.message_repo = MessageRepository()
+        self.skills = skills_registry or create_default_registry()
 
     def start(self):
         """Start interactive chat session."""
@@ -83,6 +94,11 @@ class ChatSession:
 
                 if not user_input.strip():
                     continue
+
+                # Slash commands (do not hit the LLM pipeline)
+                if user_input.strip().startswith("/"):
+                    if self._handle_slash_command(conversation, user_input.strip()):
+                        continue
 
                 # Process message
                 self.console.print("[dim]Processing...[/dim]")
@@ -145,6 +161,88 @@ class ChatSession:
         await self.conversation_repo.update(conversation)
 
         return response_data.get("content", "")
+
+    def _handle_slash_command(self, conversation: Conversation, raw: str) -> bool:
+        """Handle CLI slash-commands. Returns True if handled."""
+        cmdline = raw.strip()
+        if cmdline in ["/help", "/?"]:
+            self.console.print(
+                Panel(
+                    "\n".join(
+                        [
+                            "**Slash commands**",
+                            "- `/skills`: list available skills",
+                            "- `/skill <name> <json_args>`: execute a skill (json args optional)",
+                            "  - Example: `/skill ping {\"message\": \"hello\"}`",
+                        ]
+                    ),
+                    title="[bold cyan]Help[/bold cyan]",
+                    border_style="cyan",
+                )
+            )
+            return True
+
+        if cmdline == "/skills":
+            skills = list(self.skills.list())
+            if not skills:
+                self.console.print("[yellow]No skills registered.[/yellow]")
+                return True
+            lines = ["**Available skills:**"]
+            for s in skills:
+                lines.append(f"- **{s.name}**: {s.description}")
+            self.console.print(
+                Panel(Markdown("\n".join(lines)), title="[bold cyan]Skills[/bold cyan]", border_style="cyan")
+            )
+            return True
+
+        if cmdline.startswith("/skill"):
+            try:
+                parts = shlex.split(cmdline)
+            except ValueError as e:
+                self.console.print(f"[red]Invalid command: {e}[/red]")
+                return True
+
+            if len(parts) < 2:
+                self.console.print("[yellow]Usage: /skill <name> <json_args>[/yellow]")
+                return True
+
+            name = parts[1]
+            args_str = " ".join(parts[2:]).strip() if len(parts) > 2 else ""
+
+            # Accept either no args, or a JSON object string.
+            args = {}
+            if args_str:
+                try:
+                    args = json.loads(args_str)
+                except json.JSONDecodeError as e:
+                    self.console.print(f"[red]Invalid JSON args: {e}[/red]")
+                    return True
+                if not isinstance(args, dict):
+                    self.console.print("[red]JSON args must be an object (e.g. {\"k\": \"v\"}).[/red]")
+                    return True
+
+            ctx = SkillContext(session_id=conversation.session_id, llm_provider=self.llm_provider)
+            result = asyncio.run(self.skills.dispatch(name=name, args=args, context=ctx))
+
+            if result.ok:
+                self.console.print(
+                    Panel(
+                        Syntax(json.dumps(result.data, ensure_ascii=False, indent=2), "json"),
+                        title=f"[bold green]Skill OK[/bold green] {name}",
+                        border_style="green",
+                    )
+                )
+            else:
+                self.console.print(
+                    Panel(
+                        result.error or "Unknown error",
+                        title=f"[bold red]Skill Error[/bold red] {name}",
+                        border_style="red",
+                    )
+                )
+            return True
+
+        return False
 
     def _display_response(self, response: str):
         """Display agent response.

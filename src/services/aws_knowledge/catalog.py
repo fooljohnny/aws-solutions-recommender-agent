@@ -1,5 +1,7 @@
 """AWS service catalog loader with JSON knowledge base loading and RAG support."""
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
