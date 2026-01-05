@@ -14,6 +14,7 @@ from ...services.intent.classifier import MultiIntentClassifier
 from ...services.intent.processor import IntentProcessor
 from ...services.intent.aggregator import IntentResultAggregator
 from ...services.conversation.formatter import MultiIntentResponseFormatter
+from ...services.solution_kb.clarifier import KBClarificationService
 from ...services.conversation.context_retriever import ContextRetriever
 from ...services.conversation.context_updater import ContextUpdater
 from ...services.conversation.history_manager import HistoryManager
@@ -42,6 +43,7 @@ class ConversationOrchestrator:
         self.intent_processor = IntentProcessor()
         self.intent_aggregator = IntentResultAggregator()
         self.response_formatter = MultiIntentResponseFormatter()
+        self.kb_clarifier = KBClarificationService()
         self.context_retriever = ContextRetriever()
         self.context_updater = ContextUpdater()
         self.history_manager = HistoryManager()
@@ -62,6 +64,7 @@ class ConversationOrchestrator:
         # Add nodes
         workflow.add_node("classify_intents", self._classify_intents_node)
         workflow.add_node("extract_requirements", self._extract_requirements_node)
+        workflow.add_node("clarify_requirements", self._clarify_requirements_node)
         workflow.add_node("generate_recommendation", self._generate_recommendation_node)
         workflow.add_node("generate_diagram", self._generate_diagram_node)
         workflow.add_node("format_response", self._format_response_node)
@@ -69,7 +72,19 @@ class ConversationOrchestrator:
         # Define edges
         workflow.set_entry_point("classify_intents")
         workflow.add_edge("classify_intents", "extract_requirements")
-        workflow.add_edge("extract_requirements", "generate_recommendation")
+        workflow.add_edge("extract_requirements", "clarify_requirements")
+
+        def _route_after_clarify(state: AgentState) -> str:
+            return "format_response" if state.requires_clarification else "generate_recommendation"
+
+        workflow.add_conditional_edges(
+            "clarify_requirements",
+            _route_after_clarify,
+            {
+                "format_response": "format_response",
+                "generate_recommendation": "generate_recommendation",
+            },
+        )
         workflow.add_edge("generate_recommendation", "generate_diagram")
         workflow.add_edge("generate_diagram", "format_response")
         workflow.add_edge("format_response", END)
@@ -175,6 +190,34 @@ class ConversationOrchestrator:
 
         return state
 
+    async def _clarify_requirements_node(self, state: AgentState) -> AgentState:
+        """Decide whether we need clarification and generate KB-driven questions."""
+        # If user explicitly asks clarifying question, always allow clarification mode.
+        has_clarification_intent = any(
+            i.intent_type.value == "clarification" and i.confidence >= 0.5 for i in (state.recognized_intents or [])
+        )
+
+        plan = self.kb_clarifier.plan(state.extracted_requirements, limit=4)
+
+        if has_clarification_intent or plan.needs_clarification:
+            state.requires_clarification = True
+            state.clarification_questions = plan.questions
+
+            response_parts = ["## 澄清问题\n为了给出更贴近成熟模板的架构图，我需要确认几个关键信息：\n"]
+            for idx, q in enumerate(plan.questions, start=1):
+                response_parts.append(f"{idx}. {q}\n")
+            if plan.assumptions:
+                response_parts.append("\n## 默认假设（若您暂时不确定）\n")
+                for a in plan.assumptions:
+                    response_parts.append(f"- {a}\n")
+
+            state.response_content = "".join(response_parts).strip()
+            return state
+
+        state.requires_clarification = False
+        state.clarification_questions = []
+        return state
+
     async def _generate_recommendation_node(self, state: AgentState) -> AgentState:
         """Generate architecture recommendation.
 
@@ -229,6 +272,13 @@ class ConversationOrchestrator:
         Returns:
             Updated agent state
         """
+        # If we are clarifying, return the clarification content directly.
+        if state.requires_clarification:
+            if not getattr(state, "response_content", "") and state.clarification_questions:
+                state.response_content = "\n".join(state.clarification_questions)
+            state.processing_complete = True
+            return state
+
         # Process intents if available
         intent_results = {}
         if state.recognized_intents:
