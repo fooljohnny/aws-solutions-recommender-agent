@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from .base import AWSKnowledgeBase, ServiceMetadata, ServiceCategory
 from .embedding import EmbeddingService
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
+    # Optional dependency; only needed when use_rag=True
     from ...utils.storage.milvus import MilvusClient
 
 
@@ -40,7 +41,7 @@ class AWSServiceCatalog:
         
         if self.use_rag:
             try:
-                # Import lazily so pymilvus remains an optional dependency.
+                # Import Milvus client lazily so pymilvus is optional unless RAG is enabled.
                 from ...utils.storage.milvus import MilvusClient
 
                 self.embedding_service = EmbeddingService(provider=embedding_provider)

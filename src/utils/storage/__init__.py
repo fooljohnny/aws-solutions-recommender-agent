@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Union
+from typing import Optional, Union, TYPE_CHECKING
 
 # Try to import MySQL client
 try:
@@ -14,8 +14,9 @@ except ImportError:
 
 from .sqlite import SQLiteClient
 
-if TYPE_CHECKING:
-    from .mysql import MySQLClient as MySQLClientType
+if TYPE_CHECKING:  # pragma: no cover
+    # Only for type-checkers; runtime may not have MySQL extras installed.
+    from .mysql import MySQLClient as _MySQLClient
 
 
 def get_storage_client(storage_client=None) -> Union["MySQLClient", SQLiteClient]:

@@ -8,6 +8,8 @@ from anthropic import Anthropic
 from groq import Groq
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ..aws_knowledge.validator import AWSServiceValidator
+from ..solution_kb.retriever import SolutionTemplateRetriever
+from ..solution_kb.store_factory import get_solution_kb_store
 from ...models.architecture_recommendation import ArchitectureRecommendation
 from ...models.service import Service, ServiceType
 from ...models.configuration import Configuration
@@ -37,6 +39,8 @@ class ArchitectureRecommender:
         self.validator = validator or AWSServiceValidator(self.catalog)
         self.well_architected_checker = WellArchitectedChecker(validator, catalog)
         self.pricing_calculator = PricingCalculator()
+        kb_dir = os.getenv("SOLUTION_KB_DIR")  # only used by file backend
+        self.solution_kb = SolutionTemplateRetriever(store=get_solution_kb_store(root_dir=kb_dir))
 
         if llm_provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
@@ -185,6 +189,7 @@ class ArchitectureRecommender:
 用户需求：
 {req_text}
 
+{templates_text}
 可用AWS服务（部分）：
 {services_text}
 
@@ -192,6 +197,7 @@ class ArchitectureRecommender:
 1. 服务列表（服务名称、类型、角色）
 2. 每个服务的基本配置
 3. 架构说明
+4. 如果能匹配到成熟模板，请优先沿用其资源组合与关键参数命名习惯（无需逐字复刻，但要复用最佳实践）
 
 请以JSON格式返回，格式如下：
 {{
