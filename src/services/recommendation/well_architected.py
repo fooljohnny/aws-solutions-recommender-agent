@@ -1,6 +1,6 @@
 """Well-Architected Framework alignment checker with 6-pillar validation."""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from ..aws_knowledge.validator import AWSServiceValidator
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ...models.service import Service
@@ -42,7 +42,7 @@ class WellArchitectedChecker:
         config_dicts = [
             {
                 "service_name": config.service_id,  # Note: This should map to service
-                **config.config_details or {},
+                **(config.config_details or {}),
             }
             for config in configurations
         ]

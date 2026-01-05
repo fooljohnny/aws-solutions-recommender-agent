@@ -149,3 +149,4 @@ class MetricsCollector:
             "pricing_calculations": int(self.redis.get("metrics:pricing:calculations") or 0),
         }
 
+

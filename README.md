@@ -31,10 +31,11 @@ This project provides a command-line interface (CLI) for interacting with an AI 
 
 - **Python**: 3.11 或更高版本
 - **AWS账户**: 用于AWS Pricing API访问（可选，可使用缓存数据）
-- **LLM API密钥**: OpenAI API密钥 或 Anthropic API密钥（必需）
-- **存储服务** (可选):
-  - DynamoDB: 用于会话和消息存储
+- **LLM API密钥**: OpenAI API密钥、Anthropic API密钥 或 Groq API密钥（必需，至少一个）
+- **存储服务**:
+  - MySQL: 用于会话和消息存储（必需）
   - Redis: 用于价格缓存（可选）
+  - Milvus: 用于向量数据库和RAG功能（可选，启用RAG时必需）
 
 ## 安装步骤 / Installation
 
@@ -70,14 +71,28 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # 编辑 .env 文件，填入以下必需配置：
+# 至少选择一个LLM提供商
 # OPENAI_API_KEY=your_openai_api_key_here
 # 或
 # ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# 或
+# GROQ_API_KEY=your_groq_api_key_here
+
+# MySQL配置（必需，用于数据存储）
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_USER=root
+# MYSQL_PASSWORD=your_mysql_password
+# MYSQL_DATABASE=aws_arch_agent
 
 # AWS配置（可选，用于Pricing API）
 # AWS_REGION=us-east-1
 # AWS_ACCESS_KEY_ID=your_aws_access_key_id
 # AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+
+# Redis配置（可选，用于价格缓存）
+# REDIS_HOST=localhost
+# REDIS_PORT=6379
 ```
 
 ## 启动运行方法 / Running the Application
@@ -114,6 +129,9 @@ aws-arch-agent chat --llm openai
 
 # 使用Anthropic
 aws-arch-agent chat --llm anthropic
+
+# 使用Groq (快速且经济)
+aws-arch-agent chat --llm groq
 ```
 
 #### 使用示例
@@ -237,6 +255,8 @@ python -m src.services.pricing.updater
 ┌───────▼──────────────────────────────▼──────┐
 │         AWS Knowledge Base                   │
 │    (AWS服务知识库和验证)                      │
+│    - JSON知识库 + 关键词搜索                  │
+│    - Milvus向量数据库 (RAG, 可选)            │
 └─────────────────────────────────────────────┘
         │
 ┌───────▼─────────────────────────────────────┐
@@ -246,13 +266,14 @@ python -m src.services.pricing.updater
         │
 ┌───────▼─────────────────────────────────────┐
 │         Storage Layer                        │
-│  (存储层: DynamoDB + Redis)                   │
+│  (存储层: MySQL + Redis)                      │
 └─────────────────────────────────────────────┘
 ```
 
 ### 目录结构详解
 
 ```
+
 aws-solutions-recommender-agent/
 ├── src/                                    # 源代码目录
 │   ├── models/                            # 数据模型层
@@ -317,7 +338,8 @@ aws-solutions-recommender-agent/
 │   │   │
 │   │   └── aws_knowledge/                 # AWS知识库服务
 │   │       ├── base.py                   # 知识库基础结构
-│   │       ├── catalog.py                # 服务目录加载器（JSON）
+│   │       ├── catalog.py                # 服务目录加载器（JSON + RAG支持）
+│   │       ├── embedding.py              # 嵌入服务（RAG，生成向量）
 │   │       └── validator.py              # 服务验证器（Well-Architected）
 │   │
 │   ├── agents/                            # LangGraph智能体层
@@ -359,8 +381,9 @@ aws-solutions-recommender-agent/
 │   │
 │   └── utils/                             # 工具类
 │       ├── storage/                      # 存储工具
-│       │   ├── dynamodb.py              # DynamoDB客户端包装
-│       │   └── redis.py                 # Redis客户端包装
+│       │   ├── mysql.py                 # MySQL客户端包装
+│       │   ├── redis.py                 # Redis客户端包装
+│       │   └── milvus.py                # Milvus向量数据库客户端（RAG）
 │       ├── logging/                      # 日志工具
 │       │   └── logger.py                # 结构化日志记录器
 │       ├── metrics/                      # 指标工具
@@ -448,7 +471,9 @@ aws-solutions-recommender-agent/
 基于用户需求和AWS知识库生成推荐：
 
 1. **需求分析**: 提取应用类型、规模、约束条件
-2. **服务选择**: 从AWS知识库匹配合适服务
+2. **服务选择**: 
+   - **RAG模式**（可选）: 使用Milvus向量数据库进行语义搜索，找到最相关的AWS服务
+   - **传统模式**: 从AWS知识库使用关键词匹配服务
 3. **配置生成**: 根据规模生成详细配置
 4. **验证**: 使用Well-Architected Framework验证
 5. **解释生成**: LLM生成推荐理由
@@ -531,6 +556,10 @@ templates:
   - `(Template)-[:HAS_TAG]->(Tag)`
   - `(Template)-[:HAS_INDUSTRY]->(Industry)`
   - `(Template)-[:HAS_BUSINESS_TYPE]->(BusinessType)`
+**RAG功能**:
+- 启用RAG后，系统使用向量嵌入进行语义搜索
+- 支持自然语言查询，如"我需要一个数据库服务"会自动匹配RDS、DynamoDB等
+- 提高服务推荐的准确性和相关性
 
 #### 4. 价格计算服务 (Pricing Service)
 
@@ -542,7 +571,7 @@ templates:
   ↓
 检查Redis缓存 (L1)
   ↓ (未命中)
-检查DynamoDB缓存 (L2)
+检查MySQL缓存 (L2)
   ↓ (未命中或过期)
 调用AWS Pricing API
   ↓
@@ -552,7 +581,7 @@ templates:
 ```
 
 **特性**:
-- 两级缓存（Redis + DynamoDB）
+- 两级缓存（Redis + MySQL）
 - API失败时使用缓存回退
 - 每日自动更新任务
 - 支持假设场景对比
@@ -574,12 +603,20 @@ templates:
 
 #### 6. 存储层 (Storage Layer)
 
-**DynamoDB表结构**:
+**MySQL表结构**:
 - `conversations`: 会话表（主键: session_id）
-- `messages`: 消息表（主键: session_id + timestamp）
-- `recommendations`: 推荐表（主键: session_id + created_at）
+- `messages`: 消息表（主键: message_id，索引: session_id + timestamp）
+- `intents`: 意图表（主键: intent_id，索引: message_id）
+- `user_requirements`: 用户需求表（主键: requirement_id，索引: session_id）
+- `recommendations`: 推荐表（主键: recommendation_id，索引: session_id）
 
-**Redis缓存**:
+**MySQL存储**:
+- 自动初始化：首次运行自动创建数据库和表
+- JSON支持：使用MySQL JSON类型存储复杂数据
+- 索引优化：为常用查询字段创建索引
+- 30天TTL：会话自动过期清理
+
+**Redis缓存**（可选）:
 - 价格数据：24小时TTL
 - 会话状态：1小时TTL（热会话）
 - 速率限制：按窗口计数
@@ -628,10 +665,12 @@ templates:
 #### LLM配置（必需）
 
 ```bash
-# 选择其中一个
+# 至少选择一个LLM提供商
 OPENAI_API_KEY=sk-...
 # 或
 ANTHROPIC_API_KEY=sk-ant-...
+# 或
+GROQ_API_KEY=gsk-...
 ```
 
 #### AWS配置（可选，用于Pricing API）
@@ -645,15 +684,21 @@ AWS_SECRET_ACCESS_KEY=your_secret
 #### 存储配置
 
 ```bash
-# DynamoDB表名
-DYNAMODB_TABLE_CONVERSATIONS=conversations
-DYNAMODB_TABLE_MESSAGES=messages
-DYNAMODB_TABLE_RECOMMENDATIONS=recommendations
+# MySQL配置（必需，用于数据存储）
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=aws_arch_agent
 
-# Redis配置（可选）
+# Redis配置（可选，用于价格缓存）
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
+
+# Milvus配置（可选，用于RAG向量搜索）
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
 ```
 
 #### 应用配置
@@ -708,7 +753,7 @@ mypy src/
 - **agents/**: LangGraph智能体定义，管理对话状态机
 - **api/**: FastAPI REST接口（可选，用于程序化访问）
 - **cli/**: 命令行界面，使用Typer和Rich构建
-- **repositories/**: 数据访问抽象层，封装DynamoDB操作
+- **repositories/**: 数据访问抽象层，封装MySQL操作
 - **tools/**: MCP工具，用于LLM函数调用
 - **utils/**: 工具类（存储、日志、指标、安全、合规）
 
@@ -716,7 +761,7 @@ mypy src/
 
 1. **LangGraph状态机**: 符合Constitution要求，支持状态转换审计
 2. **多意图处理**: 单消息多意图，按优先级顺序处理
-3. **两级缓存**: Redis (L1) + DynamoDB (L2) 确保价格查询性能
+3. **两级缓存**: Redis (L1) + MySQL (L2) 确保价格查询性能
 4. **上下文管理**: 30天TTL，支持会话恢复和上下文压缩
 5. **CLI优先**: 主要接口为CLI，API为可选功能
 
@@ -787,10 +832,11 @@ Agent: [计算并显示价格，理解"这个架构"指之前的推荐]
    - 确认API配额未超限
    - 检查网络连接
 
-2. **DynamoDB连接失败**
-   - 检查AWS凭证配置
-   - 确认表已创建（首次运行需初始化）
-   - 检查区域设置
+2. **MySQL连接失败**
+   - 检查MySQL服务是否运行
+   - 确认数据库用户权限
+   - 检查连接配置（主机、端口、用户名、密码）
+   - 程序会在首次运行时自动创建数据库和表
 
 3. **Redis连接失败**
    - Redis为可选组件，价格缓存会回退到API

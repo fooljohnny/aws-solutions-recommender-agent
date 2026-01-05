@@ -178,6 +178,7 @@ class ConversationOrchestrator:
             state.current_message or "",
             state.conversation_history,
             previous_requirements=state.extracted_requirements,
+            session_id=state.session_id,
         )
         state.extracted_requirements = requirements
 

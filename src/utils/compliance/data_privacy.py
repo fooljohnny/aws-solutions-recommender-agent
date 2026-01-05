@@ -83,3 +83,4 @@ class DataPrivacyManager:
             "compliance": ["GDPR", "CCPA"],
         }
 
+

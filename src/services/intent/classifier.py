@@ -5,6 +5,7 @@ import json
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 from ...models.intent import Intent, IntentType, IntentStatus
 
 
@@ -31,6 +32,12 @@ class MultiIntentClassifier:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -144,7 +151,8 @@ class MultiIntentClassifier:
         Returns:
             Intent classification results
         """
-        if self.llm_provider == "openai":
+        if self.llm_provider in ["openai", "groq"]:
+            # Groq API is compatible with OpenAI format
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -188,4 +196,5 @@ class MultiIntentClassifier:
             IntentType.CLARIFICATION: 3,
         }
         return priority_map.get(intent_type, 3)
+
 

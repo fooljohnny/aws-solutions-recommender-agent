@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ..aws_knowledge.validator import AWSServiceValidator
 from ..solution_kb.retriever import SolutionTemplateRetriever
@@ -53,6 +54,12 @@ class ArchitectureRecommender:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -82,10 +89,24 @@ class ArchitectureRecommender:
         services = []
         configurations = []
         for svc_data in service_recommendations.get("services", []):
+            # Normalize service type (handle variations like "network" -> "networking")
+            service_type_str = svc_data.get("type", "other").lower()
+            type_mapping = {
+                "network": "networking",
+                "net": "networking",
+            }
+            service_type_str = type_mapping.get(service_type_str, service_type_str)
+            
+            try:
+                service_type = ServiceType(service_type_str)
+            except ValueError:
+                # Fallback to OTHER if type is not recognized
+                service_type = ServiceType.OTHER
+            
             service = Service(
                 recommendation_id=UUID("00000000-0000-0000-0000-000000000000"),  # Will be set later
                 aws_service_name=svc_data["name"],
-                service_type=ServiceType(svc_data.get("type", "other")),
+                service_type=service_type,
                 role=svc_data.get("role", ""),
                 region=svc_data.get("region"),
             )
@@ -141,24 +162,23 @@ class ArchitectureRecommender:
             for req in requirements
         ])
 
-        # Retrieve mature solution templates (if any) to bias towards proven architectures/configs.
-        retrieved = self.solution_kb.retrieve(requirements, limit=3)
-        templates_text = ""
-        if retrieved:
-            lines = []
-            for item in retrieved:
-                t = item.template
-                param_names = [p.name for p in t.parameters[:10]]
-                lines.append(
-                    "- "
-                    f"{t.meta.name or str(t.meta.template_id)} | "
-                    f"资源类型: {', '.join(t.resource_types[:12]) or 'N/A'} | "
-                    f"参数: {', '.join(param_names) or 'N/A'}"
-                )
-            templates_text = "\n优先参考的成熟解决方案模板（来自知识库索引，供你复用配置/拓扑思路）：\n" + "\n".join(lines) + "\n"
+        # Build query from requirements for semantic search
+        query_parts = [req.requirement_value for req in requirements]
+        query = " ".join(query_parts) if query_parts else "AWS services"
 
-        # Get available services from catalog
-        available_services = self.catalog.get_knowledge_base().get_all_services()
+        # Use semantic search if RAG is enabled, otherwise use keyword search
+        if self.catalog.use_rag:
+            # Use semantic search to find most relevant services
+            search_results = self.catalog.search_services_semantic(
+                query=query,
+                top_k=10,
+            )
+            available_services = [result["service"] for result in search_results]
+        else:
+            # Fallback to keyword search or all services
+            available_services = self.catalog.search_services(keyword=query) or \
+                                self.catalog.get_knowledge_base().get_all_services()[:20]
+
         services_text = "\n".join([
             f"- {svc.service_name}: {svc.description}"
             for svc in available_services[:20]  # Limit to first 20 for prompt size
@@ -210,7 +230,8 @@ class ArchitectureRecommender:
         Returns:
             Service recommendations as dictionary
         """
-        if self.llm_provider == "openai":
+        if self.llm_provider in ["openai", "groq"]:
+            # Groq API is compatible with OpenAI format
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

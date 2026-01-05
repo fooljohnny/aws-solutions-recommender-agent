@@ -1,7 +1,7 @@
 """Rate limiting middleware with per-session and per-IP rate limiting."""
 
 import time
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from ...utils.storage.redis import RedisClient
@@ -132,4 +132,5 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
+
 

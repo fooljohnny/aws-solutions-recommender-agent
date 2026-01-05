@@ -12,7 +12,7 @@ class Conversation(BaseModel):
     session_id: UUID = Field(default_factory=uuid4, description="Unique session identifier (UUID)")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Session creation timestamp")
     last_accessed_at: datetime = Field(default_factory=datetime.utcnow, description="Last message timestamp")
-    expires_at: datetime = Field(description="TTL timestamp (30 days from creation)")
+    expires_at: Optional[datetime] = Field(default=None, description="TTL timestamp (30 days from creation)")
     conversation_history: List["Message"] = Field(default_factory=list, description="Ordered list of messages")
     current_context: Optional[Dict[str, Any]] = Field(default=None, description="Current conversation context state")
     user_preferences: Optional[Dict[str, Any]] = Field(default=None, description="User preferences (region, language, etc.)")

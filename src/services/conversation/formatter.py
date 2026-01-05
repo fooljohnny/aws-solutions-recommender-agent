@@ -68,3 +68,4 @@ class MultiIntentResponseFormatter:
 
         return "\n".join(response_parts) if response_parts else "已处理您的请求。"
 
+

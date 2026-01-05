@@ -1,24 +1,56 @@
-"""AWS service catalog loader with JSON knowledge base loading."""
+"""AWS service catalog loader with JSON knowledge base loading and RAG support."""
 
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from .base import AWSKnowledgeBase, ServiceMetadata, ServiceCategory
+from .embedding import EmbeddingService
+from ...utils.storage.milvus import MilvusClient
 
 
 class AWSServiceCatalog:
-    """AWS service catalog with JSON knowledge base loading."""
+    """AWS service catalog with JSON knowledge base loading and RAG support."""
 
-    def __init__(self, catalog_path: Optional[str] = None):
+    def __init__(
+        self,
+        catalog_path: Optional[str] = None,
+        use_rag: bool = False,
+        embedding_provider: str = "openai",
+    ):
         """Initialize catalog with knowledge base.
 
         Args:
             catalog_path: Path to JSON catalog file (defaults to embedded catalog)
+            use_rag: Whether to use RAG with vector search (defaults to False)
+            embedding_provider: Embedding provider ('openai' or 'local')
         """
         self.catalog_path = catalog_path
         self.knowledge_base = AWSKnowledgeBase()
+        self.use_rag = use_rag
+        self.embedding_provider = embedding_provider
+        
+        # Initialize RAG components if enabled
+        self.milvus_client: Optional[MilvusClient] = None
+        self.embedding_service: Optional[EmbeddingService] = None
+        
+        if self.use_rag:
+            try:
+                self.embedding_service = EmbeddingService(provider=embedding_provider)
+                embedding_dim = self.embedding_service.get_dimension()
+                self.milvus_client = MilvusClient(embedding_dim=embedding_dim)
+                self.milvus_client.connect()
+                self.milvus_client.create_collection()
+            except Exception as e:
+                print(f"Warning: Failed to initialize RAG components: {e}")
+                print("Falling back to keyword search only")
+                self.use_rag = False
+        
         self._load_catalog()
+        
+        # Initialize vector database if RAG is enabled
+        if self.use_rag and self.milvus_client:
+            self._initialize_vector_database()
 
     def _load_catalog(self) -> None:
         """Load service catalog from JSON file or create default catalog."""
@@ -174,4 +206,180 @@ class AWSServiceCatalog:
             AWS knowledge base
         """
         return self.knowledge_base
+
+    def _initialize_vector_database(self) -> None:
+        """Initialize vector database with service embeddings."""
+        if not self.milvus_client or not self.embedding_service:
+            return
+
+        # Check if collection already has data
+        stats = self.milvus_client.get_collection_stats()
+        if stats.get("num_entities", 0) > 0:
+            print(f"Vector database already initialized with {stats['num_entities']} entities")
+            return
+
+        print("Initializing vector database with service embeddings...")
+        
+        # Prepare data for vectorization
+        service_names = []
+        text_contents = []
+        metadata_list = []
+
+        for service in self.knowledge_base.get_all_services():
+            # Create comprehensive text content for embedding
+            text_parts = [
+                f"Service: {service.service_name}",
+                f"Display Name: {service.display_name}",
+                f"Category: {service.category.value}",
+                f"Description: {service.description}",
+            ]
+            
+            if service.use_cases:
+                text_parts.append(f"Use Cases: {', '.join(service.use_cases)}")
+            if service.capabilities:
+                text_parts.append(f"Capabilities: {', '.join(service.capabilities)}")
+            if service.best_practices:
+                text_parts.append(f"Best Practices: {', '.join(service.best_practices)}")
+            
+            text_content = " | ".join(text_parts)
+            
+            # Create metadata
+            metadata = {
+                "service_name": service.service_name,
+                "display_name": service.display_name,
+                "category": service.category.value,
+                "description": service.description,
+                "use_cases": service.use_cases,
+                "capabilities": service.capabilities,
+            }
+            
+            service_names.append(service.service_name)
+            text_contents.append(text_content)
+            metadata_list.append(metadata)
+
+        # Generate embeddings
+        print(f"Generating embeddings for {len(text_contents)} services...")
+        embeddings = self.embedding_service.embed_batch(text_contents)
+
+        # Insert into Milvus
+        self.milvus_client.insert_vectors(
+            service_names=service_names,
+            text_contents=text_contents,
+            embeddings=embeddings,
+            metadata_list=metadata_list,
+        )
+        
+        print("Vector database initialization complete!")
+
+    def search_services_semantic(
+        self,
+        query: str,
+        top_k: int = 5,
+        category: Optional[ServiceCategory] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search services using semantic similarity (RAG).
+
+        Args:
+            query: Natural language query
+            top_k: Number of results to return
+            category: Optional category filter
+
+        Returns:
+            List of search results with service metadata and similarity scores
+        """
+        if not self.use_rag or not self.milvus_client or not self.embedding_service:
+            # Fallback to keyword search
+            return self._keyword_search_to_dict(query, category)
+
+        # Generate query embedding
+        query_embedding = self.embedding_service.embed_text(query)
+
+        # Build filter expression if category is provided
+        expr = None
+        if category:
+            expr = f'category == "{category.value}"'
+
+        # Search in Milvus
+        results = self.milvus_client.search(
+            query_embeddings=[query_embedding],
+            top_k=top_k,
+            expr=expr,
+        )
+
+        # Convert to ServiceMetadata objects
+        service_results = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            service_name = metadata.get("service_name") or result.get("service_name")
+            
+            # Get full service metadata from knowledge base
+            service = self.knowledge_base.get_service(service_name)
+            if service:
+                service_results.append({
+                    "service": service,
+                    "score": result.get("score", 0.0),
+                    "distance": result.get("distance", 0.0),
+                    "text_content": result.get("text_content", ""),
+                })
+
+        return service_results
+
+    def _keyword_search_to_dict(
+        self,
+        query: str,
+        category: Optional[ServiceCategory] = None,
+    ) -> List[Dict[str, Any]]:
+        """Convert keyword search results to dictionary format.
+
+        Args:
+            query: Search query
+            category: Optional category filter
+
+        Returns:
+            List of search results in dictionary format
+        """
+        services = self.knowledge_base.search_services(
+            category=category,
+            keyword=query,
+        )
+        
+        return [
+            {
+                "service": service,
+                "score": 1.0,  # Keyword search doesn't have similarity scores
+                "distance": 0.0,
+                "text_content": f"{service.service_name}: {service.description}",
+            }
+            for service in services
+        ]
+
+    def search_services(
+        self,
+        category: Optional[ServiceCategory] = None,
+        keyword: Optional[str] = None,
+        use_semantic: bool = False,
+        top_k: int = 10,
+    ) -> List[ServiceMetadata]:
+        """Search services by category or keyword.
+
+        Args:
+            category: Filter by service category
+            keyword: Search keyword in name or description
+            use_semantic: Whether to use semantic search (RAG) if available
+            top_k: Number of results for semantic search
+
+        Returns:
+            List of matching services
+        """
+        # Use semantic search if requested and available
+        if use_semantic and keyword and self.use_rag:
+            results = self.search_services_semantic(
+                query=keyword,
+                top_k=top_k,
+                category=category,
+            )
+            return [result["service"] for result in results]
+
+        # Fallback to traditional keyword search
+        return self.knowledge_base.search_services(category=category, keyword=keyword)
 

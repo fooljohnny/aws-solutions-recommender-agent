@@ -40,3 +40,4 @@ def test_message_endpoint_schema():
     assert "/v1/conversations/{session_id}/messages" in schema["paths"]
     assert "post" in schema["paths"]["/v1/conversations/{session_id}/messages"]
 
+

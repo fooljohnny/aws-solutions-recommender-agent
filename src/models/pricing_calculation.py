@@ -37,3 +37,4 @@ class PricingCalculation(BaseModel):
             Decimal: lambda v: float(v),
         }
 
+

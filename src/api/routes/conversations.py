@@ -1,5 +1,6 @@
 """Conversation creation endpoint POST /conversations with session ID generation."""
 
+from typing import Dict, Any
 from fastapi import APIRouter, HTTPException
 from uuid import UUID
 from ..schemas.responses import ConversationResponse

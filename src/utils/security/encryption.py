@@ -32,3 +32,4 @@ class EncryptionConfig:
         # Check environment variable
         return os.getenv("ENABLE_ENCRYPTION", "true").lower() == "true"
 
+

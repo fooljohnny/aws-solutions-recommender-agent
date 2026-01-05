@@ -2,8 +2,10 @@
 
 import os
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 from openai import OpenAI
 from anthropic import Anthropic
+from groq import Groq
 from ..aws_knowledge.catalog import AWSServiceCatalog
 from ...models.user_requirement import UserRequirement, RequirementType
 
@@ -37,6 +39,12 @@ class RequirementExtractor:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
             self.client = Anthropic(api_key=api_key)
             self.model = "claude-3-opus-20240229"
+        elif llm_provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self.client = Groq(api_key=api_key)
+            self.model = "llama-3.3-70b-versatile"
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
@@ -45,6 +53,7 @@ class RequirementExtractor:
         user_message: str,
         conversation_context: Optional[List[Dict[str, Any]]] = None,
         previous_requirements: Optional[List[UserRequirement]] = None,
+        session_id: Optional[UUID] = None,
     ) -> List[UserRequirement]:
         """Extract requirements from user message with context awareness.
 
@@ -52,6 +61,7 @@ class RequirementExtractor:
             user_message: User's natural language message
             conversation_context: Previous conversation messages for context
             previous_requirements: Previously extracted requirements for integration
+            session_id: Session ID for the requirements
 
         Returns:
             List of extracted requirements (merged with previous if provided)
@@ -66,7 +76,7 @@ class RequirementExtractor:
         requirements = []
         for req_data in extracted_data.get("requirements", []):
             requirement = UserRequirement(
-                session_id=req_data.get("session_id", ""),  # Will be set by caller
+                session_id=session_id or req_data.get("session_id"),  # Use provided session_id or from data
                 requirement_type=RequirementType(req_data["requirement_type"]),
                 requirement_value=req_data["requirement_value"],
                 confidence=req_data.get("confidence", 0.8),
@@ -144,6 +154,19 @@ class RequirementExtractor:
             Extracted requirements as dictionary
         """
         if self.llm_provider == "openai":
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "你是一个AWS架构需求提取专家。只返回JSON格式的结果。"},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+            import json
+            return json.loads(response.choices[0].message.content)
+        elif self.llm_provider == "groq":
+            # Groq API is similar to OpenAI
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

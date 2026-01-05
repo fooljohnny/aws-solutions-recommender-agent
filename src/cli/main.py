@@ -16,7 +16,7 @@ app.add_typer(kb_app, name="kb")
 @app.command()
 def chat(
     session_id: Optional[str] = typer.Option(None, "--session-id", "-s", help="Session ID to resume conversation"),
-    llm_provider: str = typer.Option("openai", "--llm", help="LLM provider (openai or anthropic)"),
+    llm_provider: str = typer.Option("openai", "--llm", help="LLM provider (openai, anthropic, or groq)"),
 ):
     """Start interactive chat session with the agent."""
     from .chat import ChatSession
