@@ -124,6 +124,8 @@ class ConversationOrchestrator:
         # Load previous requirements if available
         if existing_context and existing_context.extracted_requirements:
             initial_state.extracted_requirements = existing_context.extracted_requirements
+        if existing_context:
+            initial_state.clarification_rounds_used = int(getattr(existing_context, "clarification_rounds_used", 0) or 0)
 
         # Run graph
         final_state = await self.graph.ainvoke(initial_state)
@@ -199,9 +201,13 @@ class ConversationOrchestrator:
 
         plan = self.kb_clarifier.plan(state.extracted_requirements, limit=4)
 
-        if has_clarification_intent or plan.needs_clarification:
+        # Hard cap: do not ask user to clarify more than 2 rounds in total.
+        can_ask_more = int(getattr(state, "clarification_rounds_used", 0) or 0) < 2
+
+        if (has_clarification_intent or plan.needs_clarification) and can_ask_more:
             state.requires_clarification = True
             state.clarification_questions = plan.questions
+            state.clarification_rounds_used = int(getattr(state, "clarification_rounds_used", 0) or 0) + 1
 
             response_parts = ["## 澄清问题\n为了给出更贴近成熟模板的架构图，我需要确认几个关键信息：\n"]
             for idx, q in enumerate(plan.questions, start=1):
@@ -212,7 +218,16 @@ class ConversationOrchestrator:
                     response_parts.append(f"- {a}\n")
 
             state.response_content = "".join(response_parts).strip()
+
+            await self.context_updater.update_context(
+                state.session_id,
+                clarification_rounds_used=state.clarification_rounds_used,
+            )
             return state
+
+        if (has_clarification_intent or plan.needs_clarification) and not can_ask_more:
+            # Best-effort: stop asking and proceed with defaults.
+            state.warnings.append("已达到最多2轮澄清上限，将按默认假设继续推荐（可在后续用自然语言调整）。")
 
         state.requires_clarification = False
         state.clarification_questions = []

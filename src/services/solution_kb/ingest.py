@@ -105,6 +105,8 @@ class SolutionKBIngestor:
                             ex.meta.business_types = sorted(
                                 set(ex.meta.business_types).union(ann.business_types)
                             )
+                        if ann.usage_count is not None:
+                            ex.meta.usage_count = int(ann.usage_count)
 
                 # Normalize synonyms for consistent filtering/ranking
                 ex.meta.industries = normalize_list(ex.meta.industries)

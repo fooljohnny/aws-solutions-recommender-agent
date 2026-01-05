@@ -37,6 +37,17 @@ class SolutionTemplateRetriever:
         )
         return [RetrievedTemplate(template=t, score=s) for (t, s, _comps) in ranked]
 
+    def top_by_usage(self, *, limit: int = 3) -> List[TemplateExtract]:
+        """Return top templates by usage_count (fallback path)."""
+        if not hasattr(self.store, "list_all"):
+            return []
+        try:
+            all_items = list(self.store.list_all())
+        except Exception:
+            return []
+        all_items.sort(key=lambda t: int(getattr(t.meta, "usage_count", 0) or 0), reverse=True)
+        return all_items[:limit]
+
     def _keywords_from_requirements(self, requirements: List[UserRequirement]) -> List[str]:
         kws: List[str] = []
         for r in requirements:

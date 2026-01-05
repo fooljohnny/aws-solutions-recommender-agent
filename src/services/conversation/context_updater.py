@@ -28,6 +28,12 @@ class ContextUpdater:
         new_intents: Optional[List[Intent]] = None,
         current_recommendation: Optional[ArchitectureRecommendation] = None,
         conversation_summary: Optional[str] = None,
+        clarification_rounds_used: Optional[int] = None,
+        last_recommended_template_ids: Optional[List[str]] = None,
+        selected_template_id: Optional[str] = None,
+        selected_fulfillment: Optional[dict] = None,
+        selected_region: Optional[str] = None,
+        selected_azs: Optional[List[str]] = None,
     ) -> Context:
         """Update conversation context with new information.
 
@@ -54,6 +60,12 @@ class ContextUpdater:
                 last_intents=new_intents,
                 current_recommendation_id=current_recommendation.recommendation_id if current_recommendation else None,
                 conversation_summary=conversation_summary,
+                clarification_rounds_used=int(clarification_rounds_used or 0),
+                last_recommended_template_ids=last_recommended_template_ids or [],
+                selected_template_id=selected_template_id,
+                selected_fulfillment=selected_fulfillment,
+                selected_region=selected_region,
+                selected_azs=selected_azs,
             )
         else:
             # Update existing context
@@ -78,6 +90,28 @@ class ContextUpdater:
             # Update summary
             if conversation_summary:
                 context.conversation_summary = conversation_summary
+
+            # Update clarification rounds (monotonic best-effort)
+            if clarification_rounds_used is not None:
+                context.clarification_rounds_used = max(
+                    int(getattr(context, "clarification_rounds_used", 0) or 0),
+                    int(clarification_rounds_used),
+                )
+
+            if last_recommended_template_ids is not None:
+                context.last_recommended_template_ids = list(last_recommended_template_ids)
+
+            if selected_template_id is not None:
+                context.selected_template_id = selected_template_id
+
+            if selected_fulfillment is not None:
+                context.selected_fulfillment = selected_fulfillment
+
+            if selected_region is not None:
+                context.selected_region = selected_region
+
+            if selected_azs is not None:
+                context.selected_azs = selected_azs
 
             context.updated_at = datetime.utcnow()
 

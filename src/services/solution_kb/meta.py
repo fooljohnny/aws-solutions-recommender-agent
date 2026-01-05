@@ -46,6 +46,11 @@ class TemplateMetaAnnotation(BaseModel):
     industries: List[str] = Field(default_factory=list)
     business_types: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+    usage_count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional popularity/usage metric for fallback top-N recommendations.",
+    )
 
 
 class MetaFileSpec(BaseModel):
@@ -130,6 +135,9 @@ def _merge_annotations(
         v = getattr(override, field)
         if v is not None and v != "":
             setattr(merged, field, v)
+    # usage_count: prefer override when provided; else keep base
+    if override.usage_count is not None:
+        merged.usage_count = int(override.usage_count)
     merged.tags = sorted({*(base.tags or []), *(override.tags or [])})
     merged.industries = sorted({*(base.industries or []), *(override.industries or [])})
     merged.business_types = sorted({*(base.business_types or []), *(override.business_types or [])})
