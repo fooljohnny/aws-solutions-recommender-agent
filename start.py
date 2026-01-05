@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 AWS Solution Architecture Recommendation Agent - 启动脚本
@@ -19,8 +19,8 @@ def check_env_file():
     """检查.env文件是否存在"""
     env_path = project_root / '.env'
     if not env_path.exists():
-        print("[WARNING] .env file not found!")
-        print("Please create .env file with required configuration.")
+        # .env is optional if env vars are already set (common in containers/CI).
+        print("[WARNING] .env file not found (this is OK if you exported env vars).")
         return False
     return True
 
@@ -103,11 +103,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python start.py                    # Use default LLM (groq)
-  python start.py --llm groq         # Use Groq
-  python start.py --llm openai       # Use OpenAI
-  python start.py --llm anthropic    # Use Anthropic
-  python start.py --session-id <id>  # Resume conversation
+  python3 start.py                    # Use default LLM (groq)
+  python3 start.py --llm groq         # Use Groq
+  python3 start.py --llm openai       # Use OpenAI
+  python3 start.py --llm anthropic    # Use Anthropic
+  python3 start.py --session-id <id>  # Resume conversation
         """
     )
     
@@ -134,17 +134,20 @@ Examples:
     
     args = parser.parse_args()
     
-    # 加载环境变量
-    from dotenv import load_dotenv
-    load_dotenv()
+    # 加载环境变量（如果没有 python-dotenv，也允许继续使用已导出的环境变量）
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception as e:
+        print(f"[WARNING] Could not load .env via python-dotenv: {e}")
+        print("  Tip: install it with: pip install python-dotenv")
     
     # 检查环境配置
     if not args.skip_checks:
         print("Checking environment configuration...")
         
-        if not check_env_file():
-            print("\nPlease create .env file. See QUICKSTART.md for details.")
-            sys.exit(1)
+        # .env file is optional; only fail if required env vars are missing.
+        check_env_file()
         
         if not check_required_env_vars():
             print("\nPlease configure required environment variables in .env file.")
@@ -304,6 +307,15 @@ Examples:
             else:
                 # Other errors
                 print(f"\n[ERROR] Failed to start application: {e}")
+                # Provide a very common first-step fix for fresh environments.
+                if "No module named" in error_msg or "ModuleNotFoundError" in error_msg:
+                    print("\nDependency help:")
+                    print("  - Install dependencies: pip install -r requirements.txt")
+                # Common Groq auth error (avoid printing secrets)
+                if "invalid_api_key" in error_msg.lower() or "invalid api key" in error_msg.lower():
+                    print("\nGroq auth help:")
+                    print("  - Verify GROQ_API_KEY is set and valid")
+                    print("  - Tip: do not include quotes or extra spaces in .env")
                 print("\nTroubleshooting:")
                 database_type = os.getenv("DATABASE_TYPE", "sqlite").lower()
                 if database_type == "mysql":
