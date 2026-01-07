@@ -162,6 +162,19 @@ class ArchitectureRecommender:
             for req in requirements
         ])
 
+        # Try to retrieve mature solution templates (KG) as strong priors for the LLM.
+        templates_text = ""
+        try:
+            retrieved = self.solution_kb.retrieve(requirements, limit=3)
+            if retrieved:
+                lines = ["可复用的成熟模板候选（如匹配请优先复用其资源组合与关键参数习惯）："]
+                for rt in retrieved:
+                    meta = rt.template.meta
+                    lines.append(f"- {meta.name or str(meta.template_id)}: {meta.description or ''}".strip())
+                templates_text = "\n".join(lines) + "\n"
+        except Exception:
+            templates_text = ""
+
         # Build query from requirements for semantic search
         query_parts = [req.requirement_value for req in requirements]
         query = " ".join(query_parts) if query_parts else "AWS services"

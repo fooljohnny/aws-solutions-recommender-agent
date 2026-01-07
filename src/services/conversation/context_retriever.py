@@ -51,8 +51,20 @@ class ContextRetriever:
 
         # Get current recommendation from conversation context if available
         current_recommendation_id = None
+        clarification_rounds_used = 0
+        last_recommended_template_ids = []
+        selected_template_id = None
+        selected_fulfillment = None
+        selected_region = None
+        selected_azs = None
         if conversation.current_context:
             current_recommendation_id = conversation.current_context.get("current_recommendation_id")
+            clarification_rounds_used = int(conversation.current_context.get("clarification_rounds_used", 0) or 0)
+            last_recommended_template_ids = list(conversation.current_context.get("last_recommended_template_ids") or [])
+            selected_template_id = conversation.current_context.get("selected_template_id")
+            selected_fulfillment = conversation.current_context.get("selected_fulfillment")
+            selected_region = conversation.current_context.get("selected_region")
+            selected_azs = conversation.current_context.get("selected_azs")
 
         # Build context
         context = Context(
@@ -60,6 +72,12 @@ class ContextRetriever:
             current_recommendation_id=current_recommendation_id,
             extracted_requirements=requirements,
             conversation_summary=self._summarize_conversation(messages),
+            clarification_rounds_used=clarification_rounds_used,
+            last_recommended_template_ids=last_recommended_template_ids,
+            selected_template_id=selected_template_id,
+            selected_fulfillment=selected_fulfillment,
+            selected_region=selected_region,
+            selected_azs=selected_azs,
             updated_at=conversation.last_accessed_at,
         )
 

@@ -49,6 +49,11 @@ class AgentState(BaseModel):
         default_factory=list,
         description="Questions to ask user for clarification"
     )
+    clarification_rounds_used: int = Field(
+        default=0,
+        ge=0,
+        description="How many clarification rounds have been used in this session (cap at 2).",
+    )
     processing_complete: bool = Field(default=False, description="Whether current message processing is complete")
 
     # Response content
