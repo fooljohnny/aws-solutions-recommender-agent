@@ -33,6 +33,10 @@ class ArchitectureRecommendationResponse(BaseModel):
     configurations: List[Dict[str, Any]] = Field(description="Service configurations")
     diagram_data: str = Field(description="Mermaid diagram source code")
     diagram_url: Optional[str] = Field(description="Rendered diagram URL")
+    iac_kind: Optional[str] = Field(default=None, description="IaC kind for deployment (e.g., 'cloudformation').")
+    iac_template: Optional[str] = Field(default=None, description="IaC template source code (optional inline).")
+    iac_url: Optional[str] = Field(default=None, description="Download URL for IaC template artifact.")
+    topology: Optional[Dict[str, Any]] = Field(default=None, description="Structured topology graph (nodes/edges).")
     explanation: str = Field(description="Explanation of why services were recommended")
 
 
