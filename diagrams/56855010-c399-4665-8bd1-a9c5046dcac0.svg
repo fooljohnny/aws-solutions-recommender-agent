@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="400" y="300" text-anchor="middle" font-family="monospace" font-size="14">
+    Mermaid Diagram (CLI not available)
+  </text>
+  <foreignObject x="50" y="50" width="700" height="500">
+    <div xmlns="http://www.w3.org/1999/xhtml">
+      <pre style="font-family: monospace; font-size: 12px;">graph TB
+    Safc592c5["ECS\n容器化Web应用"]
+    S15d1ddf5["ALB\n负载均衡"]
+    Sb7ebcdeb["RDS\n数据库"]
+    S2c263be1["S3\n静态资源存储"]
+    S2813a980["VPC\n网络环境"]
+    Safc592c5 --> S15d1ddf5
+    S15d1ddf5 --> Sb7ebcdeb
+    Sb7ebcdeb --> S2c263be1
+    S2c263be1 --> S2813a980</pre>
+    </div>
+  </foreignObject>
+</svg>

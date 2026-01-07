@@ -109,6 +109,7 @@ class ArchitectureRecommender:
                 service_type=service_type,
                 role=svc_data.get("role", ""),
                 region=svc_data.get("region"),
+                quantity=svc_data.get("quantity", 1),
             )
             services.append(service)
 
@@ -207,10 +208,12 @@ class ArchitectureRecommender:
 {services_text}
 
 请推荐合适的AWS服务架构，包括：
-1. 服务列表（服务名称、类型、角色）
-2. 每个服务的基本配置
+1. 服务列表（服务名称、类型、角色、数量）
+2. 每个服务的基本配置（实例类型、规格、存储等）
 3. 架构说明
 4. 如果能匹配到成熟模板，请优先沿用其资源组合与关键参数命名习惯（无需逐字复刻，但要复用最佳实践）
+
+重要：必须为每个服务指定数量（quantity）和详细配置规格（configurations），包括实例类型、存储大小、网络配置等。
 
 请以JSON格式返回，格式如下：
 {{
@@ -220,11 +223,17 @@ class ArchitectureRecommender:
       "type": "compute",
       "role": "Web服务器",
       "region": "us-east-1",
+      "quantity": 2,
       "configurations": [
         {{
           "type": "instance_type",
           "value": "t3.medium",
           "details": {{"vCPU": 2, "memory": "4GB"}}
+        }},
+        {{
+          "type": "storage",
+          "value": "30GB",
+          "details": {{"type": "gp3"}}
         }}
       ]
     }}

@@ -69,12 +69,17 @@ class MultiIntentClassifier:
             intent_type = IntentType(intent_info["intent_type"])
             priority = self._get_priority_for_intent_type(intent_type)
 
+            # Ensure extracted_entities is a dictionary
+            extracted_entities = intent_info.get("extracted_entities", {})
+            if not isinstance(extracted_entities, dict):
+                extracted_entities = {}
+
             intent = Intent(
                 message_id=message_id,
                 intent_type=intent_type,
                 priority=priority,
                 confidence=float(intent_info.get("confidence", 0.8)),
-                extracted_entities=intent_info.get("extracted_entities", {}),
+                extracted_entities=extracted_entities,
                 status=IntentStatus.PENDING,
             )
             intents.append(intent)

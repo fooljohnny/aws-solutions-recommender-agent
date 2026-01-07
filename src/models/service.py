@@ -27,6 +27,7 @@ class Service(BaseModel):
     service_type: ServiceType = Field(description="Service category")
     role: str = Field(description="Role in architecture (e.g., 'web server', 'database', 'load balancer')")
     region: Optional[str] = Field(default=None, description="AWS region")
+    quantity: int = Field(default=1, description="Number of instances/resources for this service")
     dependencies: List[UUID] = Field(default_factory=list, description="Service IDs this service depends on")
 
     class Config:

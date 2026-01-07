@@ -53,7 +53,32 @@ class DiagramGenerator:
 
         for service in services:
             node_id = self._sanitize_id(service.service_id)
-            label = f"{service.aws_service_name}\\n{service.role}"
+            
+            # Build label with service name, role, quantity, and specifications
+            label_parts = [service.aws_service_name, service.role]
+            
+            # Add quantity if > 1
+            if service.quantity > 1:
+                label_parts.append(f"数量: {service.quantity}")
+            
+            # Add key configurations
+            service_configs = [
+                cfg for cfg in recommendation.configurations 
+                if cfg.service_id == service.service_id
+            ]
+            spec_parts = []
+            for cfg in service_configs:
+                if cfg.config_type == "instance_type":
+                    spec_parts.append(f"实例: {cfg.config_value}")
+                elif cfg.config_type == "storage" or cfg.config_type == "storage_size":
+                    spec_parts.append(f"存储: {cfg.config_value}")
+                elif cfg.config_type == "db_instance_class":
+                    spec_parts.append(f"规格: {cfg.config_value}")
+            
+            if spec_parts:
+                label_parts.append(" | ".join(spec_parts))
+            
+            label = "\\n".join(label_parts)
             nodes.append(f"    {node_id}[\"{label}\"]")
 
             # Add edges for dependencies

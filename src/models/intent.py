@@ -1,5 +1,6 @@
 """Intent model representing a recognized user intent from a message."""
 
+import json
 from datetime import datetime
 from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
@@ -35,6 +36,23 @@ class Intent(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, description="Recognition confidence score")
     extracted_entities: Dict[str, Any] = Field(default_factory=dict, description="Extracted entities from intent")
     status: IntentStatus = Field(default=IntentStatus.PENDING, description="Processing status")
+
+    @field_validator("extracted_entities", mode="before")
+    @classmethod
+    def validate_extracted_entities(cls, v):
+        """Ensure extracted_entities is always a dictionary."""
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, dict) else {}
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        if isinstance(v, dict):
+            return v
+        # For any other type, return empty dict
+        return {}
 
     @field_validator("priority")
     @classmethod

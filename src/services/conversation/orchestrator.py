@@ -204,7 +204,10 @@ class ConversationOrchestrator:
         # Hard cap: do not ask user to clarify more than 2 rounds in total.
         can_ask_more = int(getattr(state, "clarification_rounds_used", 0) or 0) < 2
 
-        if (has_clarification_intent or plan.needs_clarification) and can_ask_more:
+        # Only enter clarification mode if we have actual questions to ask
+        has_questions = bool(plan.questions)
+        
+        if (has_clarification_intent or plan.needs_clarification) and can_ask_more and has_questions:
             state.requires_clarification = True
             state.clarification_questions = plan.questions
             state.clarification_rounds_used = int(getattr(state, "clarification_rounds_used", 0) or 0) + 1
@@ -326,7 +329,32 @@ class ConversationOrchestrator:
                 "**推荐的服务：**\n",
             ]
             for service in state.current_recommendation.services:
-                response_parts.append(f"- **{service.aws_service_name}**: {service.role}\n")
+                # Build service description with quantity and specs
+                service_desc = f"- **{service.aws_service_name}**: {service.role}"
+                if service.quantity > 1:
+                    # Remove the closing } and add quantity
+                    service_desc = service_desc[:-1] + f" (数量: {service.quantity})}}"
+                
+                # Add configurations
+                service_configs = [
+                    cfg for cfg in state.current_recommendation.configurations 
+                    if cfg.service_id == service.service_id
+                ]
+                if service_configs:
+                    spec_parts = []
+                    for cfg in service_configs:
+                        if cfg.config_type == "instance_type":
+                            spec_parts.append(f"实例类型: {cfg.config_value}")
+                        elif cfg.config_type == "storage" or cfg.config_type == "storage_size":
+                            spec_parts.append(f"存储: {cfg.config_value}")
+                        elif cfg.config_type == "db_instance_class":
+                            spec_parts.append(f"数据库规格: {cfg.config_value}")
+                        else:
+                            spec_parts.append(f"{cfg.config_type}: {cfg.config_value}")
+                    if spec_parts:
+                        service_desc += f" | {', '.join(spec_parts)}"
+                
+                response_parts.append(service_desc + "\n")
             response_parts.append(f"\n**架构说明：**\n{state.current_recommendation.explanation}\n")
             if state.current_recommendation.diagram_url:
                 response_parts.append(f"\n**架构图：**\n架构图已生成，可通过以下链接查看：{state.current_recommendation.diagram_url}\n")

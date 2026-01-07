@@ -41,14 +41,22 @@ async def send_message(
     )
     await message_repo.create(user_message)
 
+    # Convert Message objects to dict format for orchestrator
+    conversation_context = [
+        {
+            "role": msg.role.value,
+            "content": msg.content,
+            "timestamp": msg.timestamp.isoformat() if hasattr(msg.timestamp, "isoformat") else str(msg.timestamp),
+        }
+        for msg in conversation.conversation_history
+    ]
+
     # Process through orchestrator
     orchestrator = ConversationOrchestrator()
     response_data = await orchestrator.process_message(
         session_id=session_id,
         user_message=request.content,
-        conversation_context=[
-            {"role": "user", "content": request.content}
-        ],
+        conversation_context=conversation_context,
     )
 
     # Create assistant message

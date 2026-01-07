@@ -37,7 +37,31 @@ class MultiIntentResponseFormatter:
             response_parts.append(recommendation.explanation)
             response_parts.append("\n\n**推荐的服务：**\n")
             for service in recommendation.services:
-                response_parts.append(f"- **{service.aws_service_name}**: {service.role}\n")
+                # Build service description with quantity and specs
+                service_desc = f"- **{service.aws_service_name}**: {service.role}"
+                if service.quantity > 1:
+                    service_desc += f" (数量: {service.quantity})"
+                
+                # Add configurations
+                service_configs = [
+                    cfg for cfg in recommendation.configurations 
+                    if cfg.service_id == service.service_id
+                ]
+                if service_configs:
+                    spec_parts = []
+                    for cfg in service_configs:
+                        if cfg.config_type == "instance_type":
+                            spec_parts.append(f"实例类型: {cfg.config_value}")
+                        elif cfg.config_type == "storage" or cfg.config_type == "storage_size":
+                            spec_parts.append(f"存储: {cfg.config_value}")
+                        elif cfg.config_type == "db_instance_class":
+                            spec_parts.append(f"数据库规格: {cfg.config_value}")
+                        else:
+                            spec_parts.append(f"{cfg.config_type}: {cfg.config_value}")
+                    if spec_parts:
+                        service_desc += f" | {', '.join(spec_parts)}"
+                
+                response_parts.append(service_desc + "\n")
             if recommendation.diagram_url:
                 response_parts.append(f"\n**架构图：** {recommendation.diagram_url}\n")
 

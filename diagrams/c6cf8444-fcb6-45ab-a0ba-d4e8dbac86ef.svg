@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="400" y="300" text-anchor="middle" font-family="monospace" font-size="14">
+    Mermaid Diagram (CLI not available)
+  </text>
+  <foreignObject x="50" y="50" width="700" height="500">
+    <div xmlns="http://www.w3.org/1999/xhtml">
+      <pre style="font-family: monospace; font-size: 12px;">graph TB
+    S17b2ec32["EC2\nWeb服务器\n数量: 4\n实例: c5.xlarge | 存储: 50GB"]
+    S64857c74["RDS\n关系型数据库\n实例: db.r5.large | 存储: 100GB"]
+    S48384b45["S3\n静态资源存储"]
+    S2ba21286["VPC\n网络环境"]
+    S275085b7["ELB\n负载均衡\n实例: application"]
+    S17b2ec32 --> S64857c74
+    S64857c74 --> S48384b45
+    S48384b45 --> S2ba21286
+    S2ba21286 --> S275085b7</pre>
+    </div>
+  </foreignObject>
+</svg>

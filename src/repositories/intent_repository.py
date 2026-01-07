@@ -93,13 +93,23 @@ class IntentRepository:
 
         intents = []
         for row in rows:
+            # Safely parse extracted_entities
+            extracted_entities = {}
+            if row.get("extracted_entities"):
+                try:
+                    parsed = json.loads(row["extracted_entities"])
+                    if isinstance(parsed, dict):
+                        extracted_entities = parsed
+                except (json.JSONDecodeError, TypeError):
+                    extracted_entities = {}
+            
             intents.append(Intent(
                 intent_id=UUID(row["intent_id"]),
                 message_id=UUID(row["message_id"]),
                 intent_type=IntentType(row["intent_type"]),
                 priority=row["priority"],
                 confidence=row["confidence"],
-                extracted_entities=json.loads(row["extracted_entities"]) if row["extracted_entities"] else {},
+                extracted_entities=extracted_entities,
                 status=IntentStatus(row["status"]),
             ))
 
