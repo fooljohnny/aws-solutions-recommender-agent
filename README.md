@@ -228,6 +228,416 @@ curl http://localhost:8000/v1/conversations/{session_id}/history
 python -m src.services.pricing.updater
 ```
 
+## CLI 命令参考 / CLI Command Reference
+
+本项目提供了完整的命令行界面（CLI），支持交互式对话和知识库管理。所有命令都可以通过 `python -m src.cli.main` 或安装后的 `aws-arch-agent` 命令访问。
+
+### 主命令
+
+#### `chat` - 交互式对话会话
+
+启动与AI智能体的交互式对话，支持自然语言架构推荐。
+
+**基本用法**:
+```bash
+# 启动新会话
+python -m src.cli.main chat
+
+# 恢复已有会话
+python -m src.cli.main chat --session-id <session-id>
+
+# 指定LLM提供商
+python -m src.cli.main chat --llm <openai|anthropic|groq>
+```
+
+**选项**:
+- `--session-id, -s`: 会话ID，用于恢复之前的对话（可选）
+- `--llm`: LLM提供商，可选值：`openai`（默认）、`anthropic`、`groq`
+
+**交互式命令**:
+在对话过程中，支持以下斜杠命令：
+- `/help` 或 `/?`: 显示帮助信息
+- `/skills`: 列出所有可用的技能
+- `/skill <name> [json_args]`: 执行指定技能，例如：`/skill ping {"message": "hello"}`
+
+**示例**:
+```bash
+$ python -m src.cli.main chat --llm groq
+
+┌─────────────────────────────────────────┐
+│ AWS Solution Architecture Recommendation │
+│            Agent                         │
+│    智能云解决方案推荐智能体                │
+└─────────────────────────────────────────┘
+
+New session created: 550e8400-e29b-41d4-a716-446655440000
+
+Enter your requirements in Chinese. Type 'exit' or 'quit' to end.
+
+You: 我需要一个能处理1000用户的Web应用架构
+[Processing...]
+Agent: [架构推荐响应...]
+```
+
+#### `version` - 显示版本信息
+
+显示项目版本信息。
+
+**用法**:
+```bash
+python -m src.cli.main version
+```
+
+**输出**:
+```
+AWS Solution Architecture Recommendation Agent
+Version: 0.1.0
+```
+
+### 知识库管理命令 (`kb`)
+
+知识库管理命令用于管理解决方案模板知识库（Solution KB），支持导入CloudFormation模板、搜索、标注等功能。
+
+#### `kb ingest` - 导入模板到知识库
+
+将CloudFormation模板（JSON/YAML）导入到知识库中，支持Neo4j图数据库或本地文件存储。
+
+**用法**:
+```bash
+python -m src.cli.main kb ingest <path> [选项]
+```
+
+**参数**:
+- `path`（必需）: 模板文件路径或包含模板的目录路径
+
+**选项**:
+- `--source`: 模板来源标签，可选值：
+  - `local`（默认）
+  - `aws_quickstart`
+  - `aws_solutions`
+  - `aws_sar`
+  - `aws_samples`
+  - `terraform_aws_modules`
+  - `aws_ia`
+  - `community`
+- `--repo`: 仓库标识符或URL（可选）
+- `--kb-dir`: 知识库目录（默认：`.solution_kb`）
+- `--max-files`: 目录扫描时的最大文件数（默认：2000）
+
+**示例**:
+```bash
+# 导入单个模板文件
+python -m src.cli.main kb ingest templates/web-app.yaml \
+    --source aws_quickstart \
+    --repo "github.com/aws-quickstart/quickstart-aws-vpc"
+
+# 批量导入目录
+python -m src.cli.main kb ingest templates/ \
+    --source aws_solutions \
+    --repo "github.com/aws-solutions" \
+    --max-files 500
+```
+
+**输出**:
+```
+Ingest complete parsed=15 skipped=2 failed=0
+```
+
+#### `kb search` - 搜索模板
+
+在知识库中搜索模板，支持关键词匹配。
+
+**用法**:
+```bash
+python -m src.cli.main kb search <query> [选项]
+```
+
+**参数**:
+- `query`（必需）: 搜索关键词
+
+**选项**:
+- `--kb-dir`: 知识库目录（默认：`.solution_kb`）
+- `--limit`: 最大返回结果数（默认：5）
+
+**示例**:
+```bash
+# 搜索Web应用相关模板
+python -m src.cli.main kb search "web application" --limit 10
+
+# 搜索高可用架构
+python -m src.cli.main kb search "high availability"
+```
+
+**输出**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    KB Search Results                        │
+├──────────────┬──────────────┬──────────┬──────────┬────────┤
+│ template_id │ name          │ source   │ resource_types │ parameters │
+├──────────────┼──────────────┼──────────┼──────────┼────────┤
+│ abc-123...   │ Web应用架构  │ aws_quickstart │ EC2, RDS │ InstanceType, DBClass │
+└──────────────┴──────────────┴──────────┴──────────┴────────┘
+```
+
+#### `kb init-neo4j` - 初始化Neo4j数据库
+
+初始化Neo4j图数据库的约束和索引（仅需执行一次）。
+
+**用法**:
+```bash
+python -m src.cli.main kb init-neo4j
+```
+
+**环境变量要求**:
+- `NEO4J_URI`（必需）: Neo4j连接URI，例如：`bolt://localhost:7687`
+- `NEO4J_USER`（可选）: 用户名，默认：`neo4j`
+- `NEO4J_PASSWORD`（必需）: 密码
+- `NEO4J_DATABASE`（可选）: 数据库名称
+
+**示例**:
+```bash
+# 设置环境变量
+export NEO4J_URI=bolt://localhost:7687
+export NEO4J_PASSWORD=your_password
+
+# 初始化数据库
+python -m src.cli.main kb init-neo4j
+```
+
+**输出**:
+```
+Neo4j KB schema initialized.
+```
+
+#### `kb validate-meta` - 验证元数据文件
+
+验证 `kb.meta.yaml` 元数据文件的格式是否正确。
+
+**用法**:
+```bash
+python -m src.cli.main kb validate-meta <meta_path>
+```
+
+**参数**:
+- `meta_path`（必需）: 元数据文件路径（支持 `.yaml`、`.yml`、`.json`）
+
+**示例**:
+```bash
+# 验证元数据文件
+python -m src.cli.main kb validate-meta templates/kb.meta.yaml
+```
+
+**输出**:
+```
+Meta file is valid.
+Mode: single-template/default
+```
+
+#### `kb annotate` - 更新模板元数据
+
+为已导入知识库的模板更新元数据（名称、描述、标签、行业分类等）。
+
+**用法**:
+```bash
+python -m src.cli.main kb annotate [选项]
+```
+
+**选项**:
+- `--template-id`（必需）: 模板UUID
+- `--name`: 覆盖模板名称
+- `--description`: 覆盖模板描述
+- `--tags`: 逗号分隔的标签列表
+- `--industries`: 逗号分隔的行业列表
+- `--business-types`: 逗号分隔的业务类型列表
+- `--kb-dir`: 知识库目录（本地后端）
+
+**示例**:
+```bash
+# 更新模板标签和行业
+python -m src.cli.main kb annotate \
+    --template-id "550e8400-e29b-41d4-a716-446655440000" \
+    --tags "web,high-availability,prod-ready" \
+    --industries "retail,ecommerce"
+```
+
+**输出**:
+```
+Template metadata updated.
+```
+
+#### `kb suggest-links` - 查询资源关联关系
+
+基于知识图谱统计，查询哪些资源类型经常与指定资源类型一起使用。
+
+**用法**:
+```bash
+python -m src.cli.main kb suggest-links [选项]
+```
+
+**选项**:
+- `--resource-type`（必需）: 资源类型，例如：`AWS::Lambda::Function`
+- `--relation`: 关系类型，可选值：`depends_on`、`references`、`both`（默认：`both`）
+- `--direction`: 方向，可选值：`out`（A->B）、`in`（X->A）、`both`（默认：`out`）
+- `--industries`: 逗号分隔的行业过滤器
+- `--business-types`: 逗号分隔的业务类型过滤器
+- `--limit`: 最大建议数（默认：10）
+- `--kb-dir`: 知识库目录（本地后端）
+
+**示例**:
+```bash
+# 查询Lambda函数经常与哪些资源一起使用
+python -m src.cli.main kb suggest-links \
+    --resource-type "AWS::Lambda::Function" \
+    --relation both \
+    --limit 10
+
+# 查询金融行业的资源关联
+python -m src.cli.main kb suggest-links \
+    --resource-type "AWS::RDS::DBInstance" \
+    --industries "finance" \
+    --business-types "payments"
+```
+
+**输出**:
+```
+┌─────────────────────────────────────────────────────┐
+│    Most-likely connected resource types             │
+├──────────────┬──────────────┬───────────┤
+│ source_type │ target_type     │ count    │
+├──────────────┼──────────────┼───────────┤
+│ AWS::Lambda::Function │ AWS::DynamoDB::Table │ 45 │
+│ AWS::Lambda::Function │ AWS::S3::Bucket │ 32 │
+└──────────────┴──────────────┴───────────┘
+```
+
+#### `kb show-weights` - 显示排序权重
+
+显示当前混合排序器的权重配置（用于模板检索排序）。
+
+**用法**:
+```bash
+python -m src.cli.main kb show-weights [选项]
+```
+
+**选项**:
+- `--kb-dir`: 知识库目录（用于本地权重文件）
+
+**示例**:
+```bash
+python -m src.cli.main kb show-weights
+```
+
+**输出**:
+```json
+{
+  "keyword_match": 0.3,
+  "semantic_similarity": 0.4,
+  "source_priority": 0.2,
+  "usage_count": 0.1
+}
+```
+
+#### `kb reset-weights` - 重置排序权重
+
+将排序权重重置为默认值。
+
+**用法**:
+```bash
+python -m src.cli.main kb reset-weights [选项]
+```
+
+**选项**:
+- `--kb-dir`: 知识库目录（用于本地权重文件）
+
+**示例**:
+```bash
+python -m src.cli.main kb reset-weights
+```
+
+**输出**:
+```
+Weights reset.
+```
+
+#### `kb feedback` - 提供反馈以学习权重
+
+提供成对反馈（选择的模板 vs 拒绝的模板），用于在线学习排序权重。
+
+**用法**:
+```bash
+python -m src.cli.main kb feedback [选项]
+```
+
+**选项**:
+- `--chosen`（必需）: 被选择的模板UUID
+- `--rejected`（必需）: 被拒绝的模板UUID
+- `--query`（必需）: 原始用户描述
+- `--kb-dir`: 知识库目录（用于本地权重文件）
+
+**示例**:
+```bash
+python -m src.cli.main kb feedback \
+    --chosen "550e8400-e29b-41d4-a716-446655440000" \
+    --rejected "660e8400-e29b-41d4-a716-446655440001" \
+    --query "我需要一个高可用的Web应用架构"
+```
+
+**输出**:
+```
+Weights updated.
+{
+  "keyword_match": 0.32,
+  "semantic_similarity": 0.38,
+  ...
+}
+```
+
+### 命令速查表
+
+| 命令 | 功能 | 必需参数 |
+|------|------|----------|
+| `chat` | 启动交互式对话 | 无 |
+| `version` | 显示版本信息 | 无 |
+| `kb ingest` | 导入模板到知识库 | `path` |
+| `kb search` | 搜索模板 | `query` |
+| `kb init-neo4j` | 初始化Neo4j数据库 | 无（需环境变量） |
+| `kb validate-meta` | 验证元数据文件 | `meta_path` |
+| `kb annotate` | 更新模板元数据 | `--template-id` |
+| `kb suggest-links` | 查询资源关联关系 | `--resource-type` |
+| `kb show-weights` | 显示排序权重 | 无 |
+| `kb reset-weights` | 重置排序权重 | 无 |
+| `kb feedback` | 提供反馈学习权重 | `--chosen`, `--rejected`, `--query` |
+
+### 环境变量配置
+
+不同命令可能需要不同的环境变量配置：
+
+**通用配置**:
+- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY`: LLM API密钥（`chat`命令需要）
+
+**知识库配置**:
+- `NEO4J_URI`: Neo4j连接URI（使用Neo4j后端时）
+- `NEO4J_USER`: Neo4j用户名（可选，默认：`neo4j`）
+- `NEO4J_PASSWORD`: Neo4j密码（使用Neo4j后端时）
+- `NEO4J_DATABASE`: Neo4j数据库名称（可选）
+- `SOLUTION_KB_DIR`: 本地知识库目录（默认：`.solution_kb`）
+
+**存储配置**:
+- `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`: MySQL配置（`chat`命令需要）
+- `REDIS_HOST`, `REDIS_PORT`: Redis配置（可选，用于价格缓存）
+
+### 使用技巧
+
+1. **批量导入模板**: 使用 `kb ingest` 命令可以批量导入整个目录的模板，系统会自动扫描 `.yaml`、`.yml`、`.json` 文件。
+
+2. **元数据标注**: 在模板文件同目录下创建 `kb.meta.yaml` 文件，导入时会自动合并元数据。
+
+3. **会话恢复**: 使用 `chat --session-id` 可以恢复之前的对话，系统会保留30天的会话历史。
+
+4. **多LLM支持**: 可以通过 `--llm` 选项切换不同的LLM提供商，适合测试和成本优化。
+
+5. **知识图谱查询**: 使用 `kb suggest-links` 可以探索资源之间的关联关系，帮助理解常见架构模式。
+
 ## 代码架构介绍 / Architecture Overview
 
 ### 整体架构
