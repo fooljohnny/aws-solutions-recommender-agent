@@ -534,6 +534,12 @@ templates:
 - `aws-arch-agent kb export --template-id <uuid> --out ./out.yaml`：导出模板原文（若已存储或路径可访问）
 - `aws-arch-agent kb recommend "<自然语言描述>" --no-clarify --export ./out`：基于自然语言查询推荐成熟模板并导出
 
+**KB data collection plan (1000 diagrams)**:
+- Plan: `docs/solution_kb_collection_plan.md`
+- Data layout: `data/solution_kb/README.md`
+- Collect: `python scripts/solution_kb/collect.py --config data/solution_kb/sources.yaml`
+- Audit: `python scripts/solution_kb/audit.py --manifest data/solution_kb/manifests/template_manifest.jsonl`
+
 **资源类型“最可能连接”统计**：
 - `aws-arch-agent kb suggest-links --resource-type "AWS::Lambda::Function" --direction out|in|both --relation depends_on|references|both --industries "finance" --business-types "payments"`
 - `aws-arch-agent kb suggest-next --resource-types "AWS::Lambda::Function,AWS::S3::Bucket" --direction both --relation both`：多资源类型的“下一图元”建议
@@ -872,3 +878,5 @@ MIT License
 - [数据模型](specs/1-aws-arch-agent/data-model.md)
 - [API文档](specs/1-aws-arch-agent/contracts/api.yaml)
 - [快速开始指南](specs/1-aws-arch-agent/quickstart.md)
+- [Solution KB collection plan](docs/solution_kb_collection_plan.md)
+- [Solution KB data layout](data/solution_kb/README.md)
