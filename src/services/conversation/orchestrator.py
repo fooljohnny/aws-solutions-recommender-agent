@@ -10,16 +10,20 @@ from ...services.recommendation.requirement_extractor import RequirementExtracto
 from ...services.recommendation.recommender import ArchitectureRecommender
 from ...services.diagram.generator import DiagramGenerator
 from ...services.diagram.storage import DiagramStorage
+from ...services.diagram.template_generator import TemplateDiagramGenerator
 from ...services.intent.classifier import MultiIntentClassifier
 from ...services.intent.processor import IntentProcessor
 from ...services.intent.aggregator import IntentResultAggregator
 from ...services.conversation.formatter import MultiIntentResponseFormatter
 from ...services.solution_kb.clarifier import KBClarificationService
+from ...services.solution_kb.cfn_parser import CloudFormationTemplateParser
 from ...services.conversation.context_retriever import ContextRetriever
 from ...services.conversation.context_updater import ContextUpdater
 from ...services.conversation.history_manager import HistoryManager
 from ...repositories.conversation_repository import ConversationRepository
 from ...repositories.message_repository import MessageRepository
+from ...services.iac.cloudformation_generator import CloudFormationGenerator
+from ...services.iac.storage import IaCStorage
 
 
 class ConversationOrchestrator:
@@ -38,7 +42,11 @@ class ConversationOrchestrator:
         self.requirement_extractor = RequirementExtractor(llm_provider=llm_provider)
         self.recommender = ArchitectureRecommender(llm_provider=llm_provider)
         self.diagram_generator = DiagramGenerator()
+        self.template_diagram_generator = TemplateDiagramGenerator()
         self.diagram_storage = DiagramStorage()
+        self.iac_generator = CloudFormationGenerator()
+        self.iac_storage = IaCStorage()
+        self.cfn_parser = CloudFormationTemplateParser()
         self.intent_classifier = MultiIntentClassifier(llm_provider=llm_provider)
         self.intent_processor = IntentProcessor()
         self.intent_aggregator = IntentResultAggregator()
@@ -265,12 +273,36 @@ class ConversationOrchestrator:
         if not state.current_recommendation:
             return state
 
-        # Generate Mermaid diagram
-        mermaid_source = self.diagram_generator.generate_mermaid(
-            state.current_recommendation,
-            diagram_type="flowchart",
-        )
-        state.current_recommendation.diagram_data = mermaid_source
+        # 1) Try generate deployable IaC (CloudFormation) + topology-based Mermaid from template.
+        try:
+            build = self.iac_generator.generate(state.current_recommendation)
+            state.current_recommendation.iac_kind = "cloudformation"
+            state.current_recommendation.iac_template = build.template_yaml
+            state.current_recommendation.iac_url = self.iac_storage.save_cloudformation(state.current_recommendation)
+
+            # Parse IaC to extract resource topology, then generate Mermaid from resources+edges.
+            extract = self.cfn_parser.parse_text(build.template_yaml)
+            state.current_recommendation.topology = {
+                "nodes": [{"id": r.logical_id, "type": r.type} for r in (extract.resources or [])],
+                "edges": [
+                    {"from": r.logical_id, "to": dep, "type": "depends_on"}
+                    for r in (extract.resources or [])
+                    for dep in (r.depends_on or [])
+                ]
+                + [
+                    {"from": r.logical_id, "to": ref, "type": "references"}
+                    for r in (extract.resources or [])
+                    for ref in (r.references or [])
+                ],
+            }
+            state.current_recommendation.diagram_data = self.template_diagram_generator.generate_mermaid(extract)
+        except Exception:
+            # 2) Fallback: service-level Mermaid diagram (non-IaC)
+            mermaid_source = self.diagram_generator.generate_mermaid(
+                state.current_recommendation,
+                diagram_type="flowchart",
+            )
+            state.current_recommendation.diagram_data = mermaid_source
 
         # Save diagram and get URL
         diagram_url = self.diagram_storage.save_diagram(

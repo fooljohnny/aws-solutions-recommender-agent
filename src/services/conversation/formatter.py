@@ -64,6 +64,8 @@ class MultiIntentResponseFormatter:
                 response_parts.append(service_desc + "\n")
             if recommendation.diagram_url:
                 response_parts.append(f"\n**架构图：** {recommendation.diagram_url}\n")
+            if recommendation.iac_url:
+                response_parts.append(f"\n**可直接部署的IaC（CloudFormation）**：{recommendation.iac_url}\n")
 
         # Format pricing section
         if pricing_intents:

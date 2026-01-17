@@ -18,6 +18,22 @@ class ArchitectureRecommendation(BaseModel):
     configurations: List[Configuration] = Field(default_factory=list, description="Service configurations")
     diagram_data: str = Field(description="Mermaid diagram source code")
     diagram_url: Optional[str] = Field(default=None, description="Rendered diagram URL")
+    iac_kind: Optional[str] = Field(
+        default=None,
+        description="IaC kind for deployment (e.g., 'cloudformation').",
+    )
+    iac_template: Optional[str] = Field(
+        default=None,
+        description="IaC template source code (e.g., CloudFormation YAML).",
+    )
+    iac_url: Optional[str] = Field(
+        default=None,
+        description="Download URL for the IaC template artifact.",
+    )
+    topology: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Structured topology graph between resources (nodes/edges).",
+    )
     pricing: Optional[Dict[str, Any]] = Field(default=None, description="Associated pricing calculation")
     well_architected_alignment: Dict[str, str] = Field(
         default_factory=lambda: {
