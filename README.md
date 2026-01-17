@@ -528,12 +528,15 @@ templates:
 **入库/校验/检索 CLI**：
 - `aws-arch-agent kb validate-meta path/to/kb.meta.yaml`：校验运营标注文件
 - `aws-arch-agent kb init-neo4j`：初始化 Neo4j 约束/索引（只需一次）
-- `aws-arch-agent kb ingest <模板文件或目录> --source aws_quickstart --repo <repo标识>`：解析模板并刷入知识图谱
+- `aws-arch-agent kb ingest <模板文件或目录> --source aws_quickstart --repo <repo标识> --include-body`：解析模板并刷入知识图谱（可选存储模板原文）
 - `aws-arch-agent kb search "<关键词>" --limit 5`：检索模板
 - `aws-arch-agent kb annotate --template-id <uuid> --tags "a,b" --industries "finance" --business-types "payments"`：事后补标/改标
+- `aws-arch-agent kb export --template-id <uuid> --out ./out.yaml`：导出模板原文（若已存储或路径可访问）
+- `aws-arch-agent kb recommend "<自然语言描述>" --no-clarify --export ./out`：基于自然语言查询推荐成熟模板并导出
 
 **资源类型“最可能连接”统计**：
 - `aws-arch-agent kb suggest-links --resource-type "AWS::Lambda::Function" --direction out|in|both --relation depends_on|references|both --industries "finance" --business-types "payments"`
+- `aws-arch-agent kb suggest-next --resource-types "AWS::Lambda::Function,AWS::S3::Bucket" --direction both --relation both`：多资源类型的“下一图元”建议
 
 **候选模板混合排序（关键词+语义+同义词+来源优先级）**：
 - 关键词命中、资源类型命中

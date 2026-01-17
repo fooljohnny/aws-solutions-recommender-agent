@@ -37,10 +37,16 @@ class SolutionKBIngestor:
         source: TemplateSource = TemplateSource.LOCAL,
         repository: Optional[str] = None,
         max_files: int = 2000,
+        include_body: bool = False,
     ) -> IngestStats:
         root = Path(path)
         if root.is_file():
-            extracts, stats = self._ingest_files([root], source=source, repository=repository)
+            extracts, stats = self._ingest_files(
+                [root],
+                source=source,
+                repository=repository,
+                include_body=include_body,
+            )
             self.store.upsert_many(extracts)
             return stats
 
@@ -52,7 +58,12 @@ class SolutionKBIngestor:
             files.extend(root.rglob(ext))
         files = files[:max_files]
 
-        extracts, stats = self._ingest_files(files, source=source, repository=repository)
+        extracts, stats = self._ingest_files(
+            files,
+            source=source,
+            repository=repository,
+            include_body=include_body,
+        )
         if extracts:
             self.store.upsert_many(extracts)
         return stats
@@ -63,6 +74,7 @@ class SolutionKBIngestor:
         *,
         source: TemplateSource,
         repository: Optional[str],
+        include_body: bool,
     ) -> tuple[List[TemplateExtract], IngestStats]:
         extracts: List[TemplateExtract] = []
         parsed = failed = skipped = 0
@@ -78,6 +90,11 @@ class SolutionKBIngestor:
 
             try:
                 ex = self.cfn_parser.parse_file(str(fp), source=source, repository=repository)
+                if include_body:
+                    try:
+                        ex.meta.template_body = fp.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
                 # Heuristic: must have Resources or Parameters to be useful
                 if not ex.resources and not ex.parameters:
                     skipped += 1
