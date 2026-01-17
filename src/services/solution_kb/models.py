@@ -72,6 +72,10 @@ class TemplateMetadata(BaseModel):
     # Optional embeddings for semantic retrieval
     embedding: Optional[List[float]] = Field(default=None, description="Vector embedding for template search text")
     embedding_model: Optional[str] = Field(default=None, description="Embedding model identifier")
+    template_body: Optional[str] = Field(
+        default=None,
+        description="Optional raw template body for export (may be omitted for large KBs).",
+    )
 
 
 class ParameterSpec(BaseModel):

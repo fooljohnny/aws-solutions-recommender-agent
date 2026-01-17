@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -10,6 +11,7 @@ from uuid import UUID
 from typing import Optional
 
 from ..services.solution_kb.ingest import SolutionKBIngestor
+from ..services.solution_kb.exporter import load_template_body
 from ..services.solution_kb.models import TemplateSource
 from ..services.solution_kb.store_factory import get_solution_kb_store
 from ..services.solution_kb.meta import parse_meta_file
@@ -27,11 +29,22 @@ def ingest(
     repository: str = typer.Option(None, "--repo", help="Repository identifier or URL"),
     kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (defaults to .solution_kb)"),
     max_files: int = typer.Option(2000, "--max-files", help="Max files to scan in a directory"),
+    include_body: bool = typer.Option(
+        False,
+        "--include-body",
+        help="Store raw template body for export (may increase KB size)",
+    ),
 ):
     """Ingest CloudFormation templates (JSON/YAML) into the KB (Neo4j or local file)."""
     store = get_solution_kb_store(root_dir=kb_dir)
     ingestor = SolutionKBIngestor(store=store)
-    stats = ingestor.ingest_path(path, source=source, repository=repository, max_files=max_files)
+    stats = ingestor.ingest_path(
+        path,
+        source=source,
+        repository=repository,
+        max_files=max_files,
+        include_body=include_body,
+    )
     console.print(
         f"[green]Ingest complete[/green] parsed={stats.parsed} skipped={stats.skipped} failed={stats.failed}"
     )
@@ -129,6 +142,37 @@ def annotate(
         console.print(f"[red]Template not found:[/red] {tid}")
         raise typer.Exit(code=1)
     console.print("[green]Template metadata updated.[/green]")
+
+
+@app.command("export")
+def export_template(
+    template_id: str = typer.Option(..., "--template-id", help="Template UUID in KB/graph"),
+    out: str = typer.Option(None, "--out", help="Output path for template body (prints to stdout if omitted)"),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
+):
+    """Export the raw template body (if stored or path is accessible)."""
+    store = get_solution_kb_store(root_dir=kb_dir)
+    tid = UUID(template_id)
+    template = store.get(tid) if hasattr(store, "get") else None
+    if not template:
+        console.print(f"[red]Template not found:[/red] {tid}")
+        raise typer.Exit(code=1)
+
+    body = load_template_body(template)
+    if not body:
+        console.print(
+            "[yellow]Template body not available. Re-ingest with --include-body or ensure path exists.[/yellow]"
+        )
+        raise typer.Exit(code=2)
+
+    if out:
+        out_path = Path(out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(body, encoding="utf-8")
+        console.print(f"[green]Template exported:[/green] {out_path}")
+        return
+
+    console.print(body, markup=False, highlight=False)
 
 
 @app.command("suggest-links")
