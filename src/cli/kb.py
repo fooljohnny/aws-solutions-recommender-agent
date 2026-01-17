@@ -13,6 +13,7 @@ from typing import Optional
 from ..services.solution_kb.ingest import SolutionKBIngestor
 from ..services.solution_kb.exporter import load_template_body
 from ..services.solution_kb.models import TemplateSource
+from ..services.solution_kb.suggester import suggest_next_resource_types
 from ..services.solution_kb.store_factory import get_solution_kb_store
 from ..services.solution_kb.meta import parse_meta_file
 from ..services.solution_kb.ranking import HybridRanker, OnlineWeightLearner, WeightStore, RankWeights
@@ -219,6 +220,74 @@ def suggest_links(
     table.add_column("count", justify="right")
     for tgt, cnt in pairs:
         table.add_row(resource_type, tgt, str(cnt))
+    console.print(table)
+
+
+@app.command("suggest-next")
+def suggest_next(
+    resource_types: str = typer.Option(None, "--resource-types", help="Comma-separated resource types"),
+    template_id: str = typer.Option(None, "--template-id", help="Template UUID to derive resource types"),
+    relation: str = typer.Option(
+        "both",
+        "--relation",
+        help="Edge type: depends_on | references | both",
+    ),
+    direction: str = typer.Option(
+        "out",
+        "--direction",
+        help="Direction: out (A->B) | in (X->A) | both",
+    ),
+    industries: str = typer.Option(None, "--industries", help="Comma-separated industries filter"),
+    business_types: str = typer.Option(None, "--business-types", help="Comma-separated business types filter"),
+    limit: int = typer.Option(10, "--limit", help="Max suggested target resource types"),
+    include_existing: bool = typer.Option(
+        False,
+        "--include-existing",
+        help="Include resource types already present in the input set",
+    ),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
+):
+    """Suggest next resource types given an existing set."""
+    store = get_solution_kb_store(root_dir=kb_dir)
+
+    def split_csv(s: Optional[str]):
+        if not s:
+            return None
+        return [x.strip() for x in s.split(",") if x.strip()]
+
+    types: list[str] = []
+    if template_id:
+        tid = UUID(template_id)
+        template = store.get(tid) if hasattr(store, "get") else None
+        if not template:
+            console.print(f"[red]Template not found:[/red] {tid}")
+            raise typer.Exit(code=1)
+        types.extend(list(template.resource_types or []))
+
+    types.extend(split_csv(resource_types) or [])
+    if not types:
+        console.print("[red]Provide --resource-types or --template-id to suggest next resources.[/red]")
+        raise typer.Exit(code=1)
+
+    pairs = suggest_next_resource_types(
+        store,
+        types,
+        relation=relation,
+        direction=direction,
+        industries=split_csv(industries),
+        business_types=split_csv(business_types),
+        limit=limit,
+        exclude_present=not include_existing,
+    )
+    if not pairs:
+        console.print("[yellow]No suggestions (graph may be empty or missing resource bodies).[/yellow]")
+        raise typer.Exit(code=0)
+
+    table = Table(title="Suggested next resource types")
+    table.add_column("target_type")
+    table.add_column("count", justify="right")
+    for tgt, cnt in pairs:
+        table.add_row(tgt, str(cnt))
     console.print(table)
 
 
