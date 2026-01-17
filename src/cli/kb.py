@@ -7,12 +7,15 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import Optional
 
+from ..models.user_requirement import RequirementType, UserRequirement
+from ..services.recommendation.solution_kb_recommendation import SolutionKBRecommendationService
 from ..services.solution_kb.ingest import SolutionKBIngestor
 from ..services.solution_kb.exporter import load_template_body
 from ..services.solution_kb.models import TemplateSource
+from ..services.solution_kb.retriever import SolutionTemplateRetriever
 from ..services.solution_kb.suggester import suggest_next_resource_types
 from ..services.solution_kb.store_factory import get_solution_kb_store
 from ..services.solution_kb.meta import parse_meta_file
@@ -168,6 +171,8 @@ def export_template(
 
     if out:
         out_path = Path(out)
+        if (out_path.exists() and out_path.is_dir()) or not out_path.suffix:
+            out_path = out_path / f"{template.meta.template_id}.yaml"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(body, encoding="utf-8")
         console.print(f"[green]Template exported:[/green] {out_path}")
@@ -289,6 +294,96 @@ def suggest_next(
     for tgt, cnt in pairs:
         table.add_row(tgt, str(cnt))
     console.print(table)
+
+
+@app.command("recommend")
+def recommend(
+    query: str = typer.Argument(..., help="Natural language query for solution templates"),
+    limit: int = typer.Option(3, "--limit", help="Max recommended templates"),
+    no_clarify: bool = typer.Option(False, "--no-clarify", help="Skip clarification questions"),
+    export: str = typer.Option(None, "--export", help="Export top template to a file or directory"),
+    show_diagram: bool = typer.Option(False, "--diagram", help="Print Mermaid diagrams for results"),
+    kb_dir: str = typer.Option(None, "--kb-dir", help="KB directory (local backend only)"),
+):
+    """Recommend mature templates from the KB using a natural language query."""
+    store = get_solution_kb_store(root_dir=kb_dir)
+    retriever = SolutionTemplateRetriever(store=store)
+    recommender = SolutionKBRecommendationService(retriever=retriever)
+
+    reqs = [
+        UserRequirement(
+            session_id=uuid4(),
+            requirement_type=RequirementType.CONSTRAINT,
+            requirement_value=query,
+            confidence=0.9,
+        )
+    ]
+
+    result = recommender.recommend(
+        reqs,
+        clarification_rounds_used=2 if no_clarify else 0,
+        max_clarification_rounds=0 if no_clarify else 2,
+        limit=limit,
+    )
+
+    if result.needs_clarification:
+        console.print("[yellow]Need more details to refine recommendations:[/yellow]")
+        for idx, q in enumerate(result.clarification_questions, start=1):
+            console.print(f"{idx}. {q}")
+        if result.assumptions:
+            console.print("\n[dim]Default assumptions if you skip details:[/dim]")
+            for a in result.assumptions:
+                console.print(f"- {a}")
+        raise typer.Exit(code=0)
+
+    if not result.recommended:
+        console.print("[yellow]No matching templates found.[/yellow]")
+        raise typer.Exit(code=0)
+
+    if result.fallback_top_by_usage:
+        console.print("[dim]No strong match; showing top templates by usage.[/dim]")
+
+    table = Table(title="Recommended templates")
+    table.add_column("#", justify="right")
+    table.add_column("template_id", style="dim")
+    table.add_column("name")
+    table.add_column("source")
+    table.add_column("resource_types")
+    table.add_column("description")
+
+    for idx, rec in enumerate(result.recommended, start=1):
+        meta = rec.template.meta
+        source_val = meta.source.value if hasattr(meta.source, "value") else str(meta.source)
+        table.add_row(
+            str(idx),
+            str(meta.template_id),
+            meta.name or "",
+            source_val,
+            ", ".join(rec.template.resource_types[:8]),
+            (meta.description or "")[:120],
+        )
+    console.print(table)
+
+    if show_diagram:
+        for idx, rec in enumerate(result.recommended, start=1):
+            console.print(f"\n[bold]Mermaid diagram for #{idx}[/bold]")
+            console.print(rec.diagram_mermaid, markup=False)
+
+    if export:
+        top = result.recommended[0].template
+        body = load_template_body(top)
+        if not body:
+            console.print(
+                "[yellow]Template body not available. Re-ingest with --include-body or ensure path exists.[/yellow]"
+            )
+            raise typer.Exit(code=2)
+
+        out_path = Path(export)
+        if (out_path.exists() and out_path.is_dir()) or not out_path.suffix:
+            out_path = out_path / f"{top.meta.template_id}.yaml"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(body, encoding="utf-8")
+        console.print(f"[green]Template exported:[/green] {out_path}")
 
 
 @app.command("show-weights")
