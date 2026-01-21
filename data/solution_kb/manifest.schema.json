@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Solution KB Template Manifest",
+  "type": "object",
+  "required": [
+    "template_id",
+    "template_kind",
+    "source",
+    "repository",
+    "template_path",
+    "diagram_path",
+    "diagram_format",
+    "diagram_mode",
+    "resource_types",
+    "collected_at"
+  ],
+  "properties": {
+    "template_id": { "type": "string" },
+    "template_name": { "type": "string" },
+    "template_kind": { "type": "string" },
+    "source": { "type": "string" },
+    "repository": { "type": "string" },
+    "template_path": { "type": "string" },
+    "template_source_path": { "type": "string" },
+    "diagram_path": { "type": "string" },
+    "diagram_format": { "type": "string" },
+    "diagram_mode": { "type": "string" },
+    "diagram_source_path": { "type": "string" },
+    "resource_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "industries": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "business_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "collected_at": { "type": "string" }
+  }
+}

@@ -39,34 +39,50 @@ class SolutionKBIngestor:
         max_files: int = 2000,
         include_body: bool = False,
     ) -> IngestStats:
+        extracts, stats = self.collect_from_path(
+            path,
+            source=source,
+            repository=repository,
+            max_files=max_files,
+            include_body=include_body,
+        )
+        if extracts:
+            self.store.upsert_many(extracts)
+        return stats
+
+    def collect_from_path(
+        self,
+        path: str,
+        *,
+        source: TemplateSource = TemplateSource.LOCAL,
+        repository: Optional[str] = None,
+        max_files: int = 2000,
+        include_body: bool = False,
+    ) -> tuple[List[TemplateExtract], IngestStats]:
+        """Collect normalized extracts without writing to the store."""
         root = Path(path)
         if root.is_file():
-            extracts, stats = self._ingest_files(
+            return self._ingest_files(
                 [root],
                 source=source,
                 repository=repository,
                 include_body=include_body,
             )
-            self.store.upsert_many(extracts)
-            return stats
 
         if not root.exists():
-            return IngestStats(parsed=0, failed=0, skipped=0)
+            return [], IngestStats(parsed=0, failed=0, skipped=0)
 
         files: List[Path] = []
         for ext in ("*.yaml", "*.yml", "*.json"):
             files.extend(root.rglob(ext))
         files = files[:max_files]
 
-        extracts, stats = self._ingest_files(
+        return self._ingest_files(
             files,
             source=source,
             repository=repository,
             include_body=include_body,
         )
-        if extracts:
-            self.store.upsert_many(extracts)
-        return stats
 
     def _ingest_files(
         self,

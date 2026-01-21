@@ -1,0 +1,10 @@
+version: 1
+total_target: 1000
+source_targets:
+  aws_quickstart: 250
+  aws_solutions: 120
+  aws_sar: 200
+  aws_ia: 150
+  terraform_aws_modules: 180
+  aws_samples: 70
+  community: 30

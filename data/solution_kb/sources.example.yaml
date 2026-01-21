@@ -1,0 +1,55 @@
+version: 1
+defaults:
+  kb_dir: ".solution_kb"
+  output_dir: "data/solution_kb"
+  diagram_mode: "auto"          # auto | from_repo | none
+  diagram_format: "mmd"         # mmd | svg | png
+  diagram_subdir: ""            # optional relative path under local_path
+  include_body: false
+  copy_templates: true
+  max_files: 2000
+
+sources:
+  - id: "aws-quickstart"
+    source: "aws_quickstart"
+    repository: "github.com/aws-quickstart"
+    local_path: "data/solution_kb/sources/aws-quickstart"
+    max_files: 6000
+    diagram_mode: "from_repo"
+
+  - id: "aws-solutions"
+    source: "aws_solutions"
+    repository: "github.com/aws-solutions"
+    local_path: "data/solution_kb/sources/aws-solutions"
+    max_files: 3000
+
+  - id: "aws-sar"
+    source: "aws_sar"
+    repository: "serverlessrepo"
+    local_path: "data/solution_kb/sources/aws-sar"
+    max_files: 3000
+
+  - id: "aws-ia"
+    source: "aws_ia"
+    repository: "github.com/aws-ia"
+    local_path: "data/solution_kb/sources/aws-ia"
+    max_files: 3000
+
+  - id: "terraform-aws-modules"
+    source: "terraform_aws_modules"
+    repository: "github.com/terraform-aws-modules"
+    local_path: "data/solution_kb/sources/terraform-aws-modules"
+    max_files: 3000
+    diagram_mode: "auto"
+
+  - id: "aws-samples"
+    source: "aws_samples"
+    repository: "github.com/aws-samples"
+    local_path: "data/solution_kb/sources/aws-samples"
+    max_files: 1500
+
+  - id: "community"
+    source: "community"
+    repository: "community"
+    local_path: "data/solution_kb/sources/community"
+    max_files: 1000
